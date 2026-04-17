@@ -43,6 +43,12 @@ export const env = createEnv({
       .string()
       .min(1)
       .describe("OpenAI API key. Used for evidence embeddings (text-embedding-3-small)."),
+
+    /*
+      Sentry DSN is optional — apps should boot without it. When unset,
+      Sentry initialization is a no-op so dev + CI don't need a project.
+    */
+    SENTRY_DSN: z.string().url().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -50,6 +56,11 @@ export const env = createEnv({
       .string()
       .min(1)
       .describe("Clerk publishable key (pk_test_... or pk_live_...)."),
+    /*
+      Matches SENTRY_DSN so the same project captures server + client
+      errors. Optional — browser Sentry is a no-op when unset.
+    */
+    NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
   },
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
@@ -58,7 +69,9 @@ export const env = createEnv({
     CLERK_WEBHOOK_SIGNING_SECRET: process.env.CLERK_WEBHOOK_SIGNING_SECRET,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    SENTRY_DSN: process.env.SENTRY_DSN,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   },

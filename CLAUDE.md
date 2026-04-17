@@ -113,6 +113,21 @@ export const evidenceRouter = router({
 });
 ```
 
+## Sentry (error tracking)
+
+Sentry is wired across all three Next.js runtimes (server, edge, browser) with one noise filter to keep the dashboard signal, not alert spam.
+
+- **Config files.** `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation-client.ts`. The root `instrumentation.ts` dispatches to server vs edge at startup. Each init gates on its DSN var — no DSN, no-op.
+- **DSN.** `SENTRY_DSN` (server + edge) and `NEXT_PUBLIC_SENTRY_DSN` (browser) are both **optional**. Dev + CI boot without them. Production deploy sets them both (same value).
+- **Noise filter.** `lib/sentry-filter.ts` is the single source of truth for "is this a real bug?" — used as Sentry's `beforeSend` on every runtime. Dropped: `TRPCError` with code `UNAUTHORIZED` / `FORBIDDEN` / `NOT_FOUND` / `BAD_REQUEST` / `TOO_MANY_REQUESTS` / `CONFLICT` / `PAYLOAD_TOO_LARGE` / `TIMEOUT`. `ZodError`. Kept: everything else — unexpected throws, `INTERNAL_SERVER_ERROR`, native errors.
+- **PII off by default.** `sendDefaultPii: false`. If a real debug session needs user IP or Clerk ID, flip it per-event, not globally.
+- **Sampling.** Server + edge at 0.1, browser at 0.05. Replays off (each replay is a billable event — flip on per-investigation).
+- **Source maps.** Uploaded at build time when `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` + `SENTRY_PROJECT` are set (production CI only). Without them the build emits a warning + continues — stacktraces in Sentry will be minified until you wire the token.
+- **Global error boundary.** `app/global-error.tsx` catches render errors that escape nested `error.tsx` boundaries. Required by Sentry in App Router. Renders standalone `<html>` because it replaces the root layout.
+- **Tunnel route.** `/monitoring` routes Sentry requests through Next.js to bypass ad-blockers. Nothing else uses that path.
+
+Adding a new expected-error pattern: add the TRPC code to `EXPECTED_TRPC_CODES` in `lib/sentry-filter.ts` and add a unit case to `test/sentry-filter.test.ts`. Don't copy-paste filter logic across call sites.
+
 ## Token budget
 
 The LLM router's `onUsage` hook plugs into real enforcement via `lib/llm/usage.ts` and the `llm_usage` table.
