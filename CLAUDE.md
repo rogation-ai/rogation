@@ -51,3 +51,22 @@ All env reads go through `env.ts` (typed via `@t3-oss/env-nextjs` + zod). Never 
 ## Design
 
 `DESIGN.md` is the source of truth for every design decision: typography, color, spacing, radius, motion, component inventory, state matrix, responsive posture (mobile-read / desktop-write), WCAG 2.2 AA baseline. When writing UI, read DESIGN.md first; tokens must come from the CSS variables in `app/globals.css`.
+
+## Auth + API
+
+- Auth: Clerk. `middleware.ts` at repo root runs Clerk on every non-static request. Public routes: `/`, `/pricing`, `/docs/*`, `/s/*` (share links), `/api/webhooks/*`, `/sign-in*`, `/sign-up*`. Everything else requires a session.
+- Clerk webhook: `app/api/webhooks/clerk/route.ts` handles `user.created` by creating an `account` + `user` row in one transaction. Idempotent on redelivery (de-duped via `clerkUserId` unique index). Stripe customer creation is lazy on first upgrade, not here.
+- API layer: tRPC on Next.js App Router at `app/api/trpc/[trpc]/route.ts`.
+  - Context: `server/trpc.ts` — pulls the Clerk session, resolves `{ userId, accountId }` from our DB in one query, exposes `ctx.db`.
+  - `publicProcedure`: no auth, used for landing page and share link reads.
+  - `authedProcedure`: requires a valid Clerk session AND a resolved DB user. Narrowed `ctx.userId` / `ctx.accountId` are guaranteed non-null.
+  - Root router: `server/root.ts`. Feature routers under `server/routers/`.
+- Client: `lib/trpc.ts` exports typed React hooks. `app/providers.tsx` wires `<Providers>` (TanStack Query + tRPC) inside `<ClerkProvider>` in the root layout.
+
+## Tenant isolation
+
+Every data row belongs to an account. Three layers enforce this:
+
+1. **ESLint rule (layer 1, this commit).** `no-restricted-imports` blocks direct imports of `@/db/client` outside `db/`, `server/trpc.ts`, `app/api/webhooks/**`, and `scripts/**`. Feature code reaches the DB only via `ctx.db` in a tRPC procedure — where `ctx.accountId` is available and expected in every `.where()`.
+2. **scoped(db, accountId) proxy (layer 2, follow-up commit).** Generic per-table helpers that pre-apply `accountId` to every query. Eliminates the "just remember to add the WHERE" class of bug.
+3. **Postgres RLS (layer 3, follow-up commit).** Belt-and-suspenders at the database. Even a compromised app cannot read across accounts.
