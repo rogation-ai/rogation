@@ -176,6 +176,19 @@ Turns clusters into ranked, shippable opportunities with 5 weight sliders and li
 - **/build screen.** `app/(app)/build/page.tsx`: ranked opportunity cards on the left, 5 labeled sliders + Reset button on the right. Reset reads the defaults from `trpc.opportunities.weights` (not hardcoded). `ConfidenceBadge` + effort chip + score on each row.
 - **Insights right rail.** `LinkedOpportunities(clusterId)` queries `opportunities.forCluster`. Shows "Turn into spec →" CTA pointing at `/build#opp-<id>` (anchor deep-link lands when spec editor ships).
 
+## Specs (editor)
+
+Turns one opportunity + its linked clusters into a shippable product spec. One blocking LLM call today (streaming + refinement chat ship in follow-up commits).
+
+- **IR not strings.** `lib/spec/ir.ts` is the typed intermediate rep: `title`, `summary`, `userStories[]`, `acceptanceCriteria[]`, `nonFunctional[]`, `edgeCases[]`, `qaChecklist[]`, `citations[]`. All renderers (Markdown today, Linear + Notion next) consume `SpecIR`, never a looser shape. Stored in `spec.content_ir` (jsonb).
+- **Prompt.** `lib/llm/prompts/spec-generate.ts`, task `"generation"` (Haiku 4.5). Opportunity + clusters wrapped in `<opportunity>` / `<cluster>` XML with CDATA'd content (same trust-boundary pattern as synthesis). Parse validates cross-refs: every acceptance criterion's `storyId` must map to a real `userStory.id`, every story must have ≥1 criterion. Citations carry real cluster UUIDs — the orchestrator additionally verifies every cited clusterId was in what we sent.
+- **Readiness grade.** `lib/spec/readiness.ts > gradeSpec(spec)` is a pure, unit-tested checklist: `edgesCovered` (≥3), `validationSpecified` (every story has ≥1 criterion), `nonFunctionalAddressed` (≥1), `acceptanceTestable` (every g/w/t non-empty). 4/4 → A, 3/4 → B, 2/4 → C, ≤1 → D. The LLM is never asked to grade itself; same IR always produces the same grade so prompt regressions are measurable.
+- **Renderer.** `lib/spec/renderers/markdown.ts > renderSpecMarkdown(spec)` is deterministic. Rendered once at generation time + stored in `spec.content_md` so export is a single read instead of a re-render from possibly-stale IR.
+- **Orchestrator.** `lib/evidence/specs.ts > generateSpec(ctx, opportunityId)` — reads opp + linked clusters (cap 20) + 3 quotes/cluster, calls the prompt, validates citation UUIDs, grades + renders, UPSERTs with `version = prev + 1`. Every regeneration produces a new version; earlier versions are retained.
+- **Router.** `trpc.specs.*`: `list`, `getLatest({opportunityId})`, `generate({opportunityId})`, `exportMarkdown({opportunityId})`. `exportMarkdown` returns `{filename, content}` — filename sanitized from the spec title.
+- **Editor.** `app/(app)/spec/[opportunityId]/page.tsx` — opportunity header, empty state with "Generate spec" CTA, rendered spec view on success, sidebar with `ReadinessGrade`, `Download .md`, `Regenerate`, version + updatedAt. "Create spec →" button on each row of `/build`. First successful markdown download fires `FIRST_SPEC_EXPORTED` (localStorage-guarded so re-downloads don't double-count).
+- **Component.** `components/ui/ReadinessGrade.tsx` — A/B/C/D letter in a coloured circle + a 4-row checklist with ✓/· glyphs. Pure presentation: takes grade + checklist props, no data fetching.
+
 ## Rate limiting
 
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.
