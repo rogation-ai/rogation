@@ -92,6 +92,27 @@ Test expectations for every new feature commit:
 - When adding an error handler, write a test that triggers the error.
 - Never commit code that makes existing tests fail.
 
+## Plan limits
+
+Every mutation that creates a resource or touches a gated feature goes through `lib/plans.ts`. Never hardcode a cap or a feature gate inline.
+
+- **Source of truth.** `PLAN_LIMITS` in `lib/plans.ts` — one const per tier (`free` / `solo` / `pro`) with resource caps, monthly token budget, export targets, watermark flags, outcome tracking flag.
+- **Countable resources.** `evidence`, `insights`, `opportunities`, `specs`, `integrations`. Each maps to a table row count. Adding a new countable resource means extending `CountableResource`, `RESOURCE_TABLE`, and every `PlanLimits`.
+- **Enforcement.** Inside any `authedProcedure` resolver, call `await ctx.assertLimit('evidence')` before creating the row. It throws `TRPCError.FORBIDDEN` with a structured `plan_limit_reached` payload the UI renders as a paywall modal (design review Pass 7). On success returns `{ current, max }` so you can drive the inline `PlanMeter` without a second count.
+- **Feature gates.** `canExport(plan, 'linear')`, `exportHasWatermark(plan)`, `shareLinksHaveWatermark(plan)`, `hasOutcomeTracking(plan)`. All O(1) table lookups.
+- **Token budget.** `PLAN_LIMITS[tier].monthlyTokenBudget` is the 100% hard cap. `tokenBudgetSoftCap(tier)` returns the 80% warn line. Accumulation table (`llm_usage`) + `onUsage` hook wiring land in the observability commit.
+
+Pattern at a call site:
+
+```ts
+export const evidenceRouter = router({
+  upload: authedProcedure.mutation(async ({ ctx, input }) => {
+    await ctx.assertLimit("evidence"); // throws FORBIDDEN at cap
+    await ctx.db.insert(evidence).values({ ... });
+  }),
+});
+```
+
 ## LLM router
 
 Every LLM call goes through `lib/llm/router.ts`. Never import `@anthropic-ai/sdk` or `openai` anywhere else.

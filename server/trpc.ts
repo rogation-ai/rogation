@@ -5,28 +5,32 @@ import superjson from "superjson";
 import { ZodError } from "zod";
 import { db } from "@/db/client";
 import { bindAccountToTx, type Tx } from "@/db/scoped";
-import { users, accounts } from "@/db/schema";
+import { accounts, users } from "@/db/schema";
+import {
+  assertResourceLimit,
+  type CountableResource,
+  type LimitCheck,
+  type PlanTier,
+} from "@/lib/plans";
 
 /*
   tRPC server setup. Three pieces:
 
   1. createContext — runs per request. Pulls the Clerk session and (for
-     signed-in users) resolves the DB user + account in one query. No DB
-     access outside the resolver itself.
+     signed-in users) resolves the DB user + account + plan in one
+     query. No DB access outside the resolver itself.
 
   2. publicProcedure — no auth. Landing page queries, share links.
 
   3. authedProcedure — requires a valid Clerk session AND a resolved user
-     row in our DB. Wraps the resolver in a transaction that calls
+     row. Wraps the resolver in a transaction that calls
      set_config('app.current_account_id', <accountId>, true), so every
-     query inside is RLS-filtered by the Postgres policies from
-     migration 0001.
+     query inside is RLS-filtered.
 
-     The resolver's `ctx.db` is the transaction handle. Reads + writes
-     are account-bound automatically — a raw `ctx.db.select().from(evidence)`
-     returns only the caller's rows, no WHERE needed. (Still write the
-     WHERE for query planning; RLS is belt-and-suspenders, not an excuse
-     to skip defensive filters.)
+     Authed context also carries:
+     - ctx.plan: the account's current tier (free/solo/pro) for feature gates.
+     - ctx.assertLimit(resource): throws FORBIDDEN when the per-tier cap
+       is hit. One-liner for every create-mutation.
 */
 
 type ClerkAuth = Awaited<ReturnType<typeof auth>>;
@@ -37,6 +41,7 @@ export interface Context {
   clerkUserId: string | null;
   userId: string | null;
   accountId: string | null;
+  plan: PlanTier | null;
   db: DbLike;
 }
 
@@ -47,20 +52,38 @@ export async function createContext(): Promise<Context> {
   } catch {
     // auth() can throw when called outside the Clerk middleware path.
     // Treat as unauthenticated; authed procedures will reject downstream.
-    return { clerkUserId: null, userId: null, accountId: null, db };
+    return {
+      clerkUserId: null,
+      userId: null,
+      accountId: null,
+      plan: null,
+      db,
+    };
   }
 
   const clerkUserId = session.userId ?? null;
 
   if (!clerkUserId) {
-    return { clerkUserId: null, userId: null, accountId: null, db };
+    return {
+      clerkUserId: null,
+      userId: null,
+      accountId: null,
+      plan: null,
+      db,
+    };
   }
 
-  // This read happens OUTSIDE the RLS transaction because we don't yet
+  // This join runs OUTSIDE the RLS transaction because we don't yet
   // know the account. Running as table owner, so RLS doesn't filter.
+  // Single keyed lookup, no cross-account exposure.
   const [row] = await db
-    .select({ userId: users.id, accountId: users.accountId })
+    .select({
+      userId: users.id,
+      accountId: users.accountId,
+      plan: accounts.plan,
+    })
     .from(users)
+    .innerJoin(accounts, eq(users.accountId, accounts.id))
     .where(eq(users.clerkUserId, clerkUserId))
     .limit(1);
 
@@ -68,10 +91,16 @@ export async function createContext(): Promise<Context> {
   // hasn't delivered — rare but possible on the first request after
   // signup. Return as unauthenticated for now; the client can retry.
   if (!row) {
-    return { clerkUserId, userId: null, accountId: null, db };
+    return { clerkUserId, userId: null, accountId: null, plan: null, db };
   }
 
-  return { clerkUserId, userId: row.userId, accountId: row.accountId, db };
+  return {
+    clerkUserId,
+    userId: row.userId,
+    accountId: row.accountId,
+    plan: row.plan,
+    db,
+  };
 }
 
 const t = initTRPC.context<Context>().create({
@@ -98,7 +127,7 @@ const requireAuth = t.middleware(async ({ ctx, next }) => {
       message: "Sign in to continue.",
     });
   }
-  if (!ctx.userId || !ctx.accountId) {
+  if (!ctx.userId || !ctx.accountId || !ctx.plan) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
       message: "Account is being provisioned — try again in a moment.",
@@ -108,18 +137,25 @@ const requireAuth = t.middleware(async ({ ctx, next }) => {
   const clerkUserId = ctx.clerkUserId;
   const userId = ctx.userId;
   const accountId = ctx.accountId;
+  const plan = ctx.plan;
 
   // Open a transaction, bind the RLS session var, and run the resolver
   // inside. Every query through ctx.db is account-filtered by Postgres.
   return await db.transaction(async (tx) => {
     await bindAccountToTx(tx, accountId);
+
+    const assertLimit = (resource: CountableResource): Promise<LimitCheck> =>
+      assertResourceLimit(tx, plan, accountId, resource);
+
     return next({
       ctx: {
         ...ctx,
         clerkUserId,
         userId,
         accountId,
+        plan,
         db: tx,
+        assertLimit,
       },
     });
   });

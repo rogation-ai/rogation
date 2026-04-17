@@ -1,11 +1,18 @@
 import { eq } from "drizzle-orm";
 import { accounts, users } from "@/db/schema";
+import {
+  PLAN_LIMITS,
+  countResource,
+  exportHasWatermark,
+  shareLinksHaveWatermark,
+} from "@/lib/plans";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
-  account.me — returns the caller's own account + user row.
-  Acts as the canonical "is my auth plumbed right?" probe and the
-  client-side bootstrap call after sign-in.
+  account.me — returns the caller's own account + user row + current
+  plan limits + resource usage counts. This one payload drives both
+  the welcome screen and the PlanMeter component on every gated surface
+  (design review Pass 7).
 */
 export const accountRouter = router({
   me: authedProcedure.query(async ({ ctx }) => {
@@ -30,12 +37,41 @@ export const accountRouter = router({
       .limit(1);
 
     if (!row) {
-      // This should be impossible in practice: the tRPC middleware only
-      // proceeds when ctx.userId is resolved, which means we already found
-      // the user row. If we get here, the DB changed underneath us.
+      // Impossible in practice: the authed middleware already resolved
+      // ctx.userId off this join. If we get here, the DB changed
+      // underneath us.
       throw new Error("Account row missing for authenticated user");
     }
 
-    return row;
+    // Count all gated resources in parallel so PlanMeter renders in one
+    // round-trip. RLS keeps each count account-bound.
+    const [evidence, insights, opportunities, specs, integrations] =
+      await Promise.all([
+        countResource(ctx.db, "evidence", ctx.accountId),
+        countResource(ctx.db, "insights", ctx.accountId),
+        countResource(ctx.db, "opportunities", ctx.accountId),
+        countResource(ctx.db, "specs", ctx.accountId),
+        countResource(ctx.db, "integrations", ctx.accountId),
+      ]);
+
+    const limits = PLAN_LIMITS[ctx.plan];
+
+    return {
+      ...row,
+      usage: {
+        evidence: { current: evidence, max: limits.evidence },
+        insights: { current: insights, max: limits.insights },
+        opportunities: { current: opportunities, max: limits.opportunities },
+        specs: { current: specs, max: limits.specs },
+        integrations: { current: integrations, max: limits.integrations },
+      },
+      features: {
+        exports: limits.exports,
+        exportHasWatermark: exportHasWatermark(ctx.plan),
+        shareLinksHaveWatermark: shareLinksHaveWatermark(ctx.plan),
+        outcomeTracking: limits.outcomeTracking,
+        monthlyTokenBudget: limits.monthlyTokenBudget,
+      },
+    };
   }),
 });
