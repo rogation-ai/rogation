@@ -65,6 +65,21 @@ export const env = createEnv({
     LANGFUSE_SECRET_KEY: z.string().optional(),
     LANGFUSE_PUBLIC_KEY: z.string().optional(),
     LANGFUSE_HOST: z.string().url().optional(),
+
+    /*
+      Stripe for subscription billing. Required — the checkout + portal
+      + webhook code paths all fail at boot without the secret. Webhook
+      signing secret comes from the Stripe dashboard after registering
+      the endpoint.
+
+      Price IDs are the per-tier subscription products created in the
+      Stripe dashboard. Keep them in env so test vs live keys can point
+      at different prices.
+    */
+    STRIPE_SECRET_KEY: z.string().min(1),
+    STRIPE_WEBHOOK_SIGNING_SECRET: z.string().min(1),
+    STRIPE_PRICE_ID_SOLO: z.string().min(1),
+    STRIPE_PRICE_ID_PRO: z.string().min(1),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -101,6 +116,10 @@ export const env = createEnv({
     LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
     LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
     LANGFUSE_HOST: process.env.LANGFUSE_HOST,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SIGNING_SECRET: process.env.STRIPE_WEBHOOK_SIGNING_SECRET,
+    STRIPE_PRICE_ID_SOLO: process.env.STRIPE_PRICE_ID_SOLO,
+    STRIPE_PRICE_ID_PRO: process.env.STRIPE_PRICE_ID_PRO,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,

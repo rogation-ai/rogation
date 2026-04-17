@@ -37,6 +37,7 @@
     "posthog-node": "^5.29.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
+    "stripe": "^22.0.2",
     "superjson": "^2.2.6",
     "svix": "^1.90.0",
     "zod": "^4.3.6"

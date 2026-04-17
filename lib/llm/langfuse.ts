@@ -91,7 +91,6 @@ export function traceLLM<Input, Output>(
     }
   } catch (err) {
     // Tracing is best-effort. A dropped trace never breaks the caller.
-    // eslint-disable-next-line no-console
     console.error("[langfuse trace]", err);
   }
 }

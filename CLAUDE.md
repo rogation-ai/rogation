@@ -92,6 +92,23 @@ Test expectations for every new feature commit:
 - When adding an error handler, write a test that triggers the error.
 - Never commit code that makes existing tests fail.
 
+## Billing (Stripe)
+
+Stripe is the source of truth for subscription state. `account.plan`, `account.stripe_customer_id`, `account.stripe_subscription_id`, and `account.subscription_status` all mirror Stripe — never the other way around. Changes flow from Stripe → webhook → DB.
+
+- **Lazy customer creation.** New accounts have `stripe_customer_id = NULL` until first checkout. `ensureStripeCustomer()` in `lib/stripe/checkout.ts` creates + persists on demand. Keeps the Stripe dashboard clean + reduces the Clerk webhook's blast radius (eng review decision #3).
+- **Entrypoints.** `trpc.billing.createCheckout({ tier })` returns a Checkout Session URL for the client to redirect to. `trpc.billing.createPortal()` returns a Customer Portal URL for existing subscribers.
+- **Price mapping.** `lib/stripe/prices.ts` owns the tier ↔ Stripe price ID mapping, bidirectionally. Solo + Pro prices come from env so test vs live configurations can differ. Free has no price.
+- **Webhook.** `app/api/webhooks/stripe/route.ts` verifies signatures via `stripe.webhooks.constructEvent`. Handlers:
+  - `customer.subscription.created` / `.updated` → set `plan` + `subscription_status` + `stripe_subscription_id` + `trial_ends_at`.
+  - `customer.subscription.deleted` → revert to `free`, keep `stripe_customer_id` so re-subscription doesn't spawn a second customer.
+  - `invoice.payment_failed` → set status `past_due`; Stripe's dunning + eventual `subscription.deleted` handle the rest.
+  - Everything else is acknowledged with `{ ok, ignored }` so Stripe doesn't retry events we don't process.
+- **Idempotency.** Every handler writes a SET (not accumulating), so redelivery converges on the correct state. No events table needed yet.
+- **RLS bypass.** The Stripe webhook runs with no session variable bound, so its updates hit every account regardless of tenant — that's intentional: signed-webhook is the trust boundary, not RLS. Same pattern as the Clerk webhook.
+
+Local testing: `stripe listen --forward-to localhost:3000/api/webhooks/stripe` gives a signing secret for `STRIPE_WEBHOOK_SIGNING_SECRET` in `.env.local`.
+
 ## Plan limits
 
 Every mutation that creates a resource or touches a gated feature goes through `lib/plans.ts`. Never hardcode a cap or a feature gate inline.
