@@ -63,6 +63,22 @@ All env reads go through `env.ts` (typed via `@t3-oss/env-nextjs` + zod). Never 
   - Root router: `server/root.ts`. Feature routers under `server/routers/`.
 - Client: `lib/trpc.ts` exports typed React hooks. `app/providers.tsx` wires `<Providers>` (TanStack Query + tRPC) inside `<ClerkProvider>` in the root layout.
 
+## Testing
+
+- Framework: Vitest 4 (unit + integration). Playwright for E2E and eval infra land in later commits.
+- Command: `bun run test` (CI single run), `bun run test:watch` (dev), `bun run test:ui`.
+- Integration tests that need Postgres gate on `TEST_DATABASE_URL`. Missing → test is skipped with a message. Never point it at a DB with real data — the harness creates + drops schemas.
+- See [TESTING.md](TESTING.md) for layers, conventions, and local setup (docker pgvector).
+
+Test expectations for every new feature commit:
+
+- 100% coverage is the goal — tests make vibe coding safe.
+- Write the unit test alongside each new function.
+- Write a regression test as part of every bug fix.
+- When adding a conditional (if/else/switch), write tests for BOTH branches.
+- When adding an error handler, write a test that triggers the error.
+- Never commit code that makes existing tests fail.
+
 ## Tenant isolation
 
 Every data row belongs to an account. Three layers enforce this:
