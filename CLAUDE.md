@@ -113,6 +113,26 @@ export const evidenceRouter = router({
 });
 ```
 
+## Analytics (PostHog)
+
+Product funnel capture for the activation pipeline from plan §7: `signup_completed` → `first_upload_started` → `first_insight_viewed` → `first_spec_exported`.
+
+- **Typed event catalog.** `lib/analytics/events.ts` has one `EVENTS` const + an `EventProperties` type map. Client + server `capture()` both enforce the payload shape at compile time. Never write raw event strings inline — typos become silent data gaps in PostHog dashboards.
+- **Client-side.** `lib/analytics/posthog-client.ts` init + identify + capture, wired through `app/providers.tsx > AnalyticsBridge`. `identify()` fires when Clerk resolves a user, `reset()` fires on sign-out. Autocapture is OFF; session replay is OFF (both billable — flip on per-investigation).
+- **Server-side.** `lib/analytics/posthog-server.ts` captures from webhooks + tRPC. The Clerk webhook emits `signup_completed` and calls `flushServer()` before responding so Vercel's worker teardown doesn't lose the event.
+- **Env.** `NEXT_PUBLIC_POSTHOG_KEY` (browser), `POSTHOG_API_KEY` (server), `NEXT_PUBLIC_POSTHOG_HOST` (defaults to `https://us.posthog.com`). All optional; capture is a no-op when keys are missing so dev works without a project.
+- **PII.** Never pass evidence content, prompt text, or credentials as event properties. Only Clerk userId + plan tier + enum-like descriptors.
+
+## LLM trace capture (Langfuse)
+
+Every LLM call through the router records a Langfuse trace when keys are configured. Paired with Sentry (errors) + PostHog (user behavior), this closes the observability triangle.
+
+- **Path.** `complete(prompt, input, { onUsage: ctx.chargeLLM, onTrace: ctx.traceLLM })`. `ctx.traceLLM` is bound to `{accountId, userId}` by the authed tRPC middleware, so every trace carries user attribution.
+- **Trace shape.** prompt name + hash, model, input, output, latency, error if any. Tags: `[promptName, model]` for fast filtering. `metadata.accountId` + `metadata.promptHash` for the eval regression workflow.
+- **Env.** `LANGFUSE_SECRET_KEY` + `LANGFUSE_PUBLIC_KEY` + optional `LANGFUSE_HOST` (defaults to `https://cloud.langfuse.com`). When either key is missing, `traceLLM()` is a no-op. Production deploy sets all three; dev runs without.
+- **Best-effort.** Tracing errors are caught + logged inside `traceLLM()`, never propagate to the caller. A dropped trace is acceptable; a broken user request because of tracing is not.
+- **Batching.** Module-level singleton client, `flushAt: 5`, `flushInterval: 5s`. Call `flushLangfuse()` at the end of webhooks + serverless handlers so the process doesn't die with events queued.
+
 ## Sentry (error tracking)
 
 Sentry is wired across all three Next.js runtimes (server, edge, browser) with one noise filter to keep the dashboard signal, not alert spam.

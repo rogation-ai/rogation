@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import { trpc } from "@/lib/trpc";
+import { initPostHog, identify, reset } from "@/lib/analytics/posthog-client";
 
 /*
-  Client-side providers. Wraps the app in TanStack Query + tRPC so any
-  client component can call `trpc.<router>.<procedure>.useQuery()`.
+  Client-side providers. Wraps the app in TanStack Query + tRPC +
+  PostHog so any client component can call trpc hooks + the app
+  captures the activation funnel.
 
-  One QueryClient per React tree, created once in state so HMR doesn't
-  reset the cache on every edit.
+  PostHog init runs once on mount and is idempotent. identify() fires
+  when Clerk resolves a user; reset() fires on sign-out so the shared
+  machine doesn't mix two users' events.
 */
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -39,7 +43,34 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <AnalyticsBridge />
+        {children}
+      </QueryClientProvider>
     </trpc.Provider>
   );
+}
+
+/*
+  Connects Clerk's session state to PostHog. Mounted once inside the
+  provider tree so useUser() has access to the Clerk context.
+*/
+function AnalyticsBridge() {
+  const { isSignedIn, user } = useUser();
+
+  useEffect(() => {
+    initPostHog();
+  }, []);
+
+  useEffect(() => {
+    if (isSignedIn && user) {
+      identify(user.id, {
+        email: user.primaryEmailAddress?.emailAddress,
+      });
+    } else if (isSignedIn === false) {
+      reset();
+    }
+  }, [isSignedIn, user]);
+
+  return null;
 }

@@ -18,7 +18,8 @@ import {
   type BudgetState,
   type MonthlyTotals,
 } from "@/lib/llm/usage";
-import type { Usage } from "@/lib/llm/router";
+import { traceLLM } from "@/lib/llm/langfuse";
+import type { TraceEvent, Usage } from "@/lib/llm/router";
 
 /*
   tRPC server setup. Three pieces:
@@ -166,6 +167,14 @@ const requireAuth = t.middleware(async ({ ctx, next }) => {
     const chargeLLM = (usage: Usage): Promise<MonthlyTotals> =>
       chargeAndEnforce(tx, plan, accountId, usage);
 
+    // onTrace sink for the LLM router. Pass this straight to
+    // complete(prompt, input, { onTrace: ctx.traceLLM }).
+    // Captures a Langfuse trace with user + account attribution when
+    // Langfuse is configured; no-ops otherwise.
+    const traceLLMBound = <I, O>(event: TraceEvent<I, O>): void => {
+      traceLLM(event, { userId, accountId });
+    };
+
     return next({
       ctx: {
         ...ctx,
@@ -177,6 +186,7 @@ const requireAuth = t.middleware(async ({ ctx, next }) => {
         assertLimit,
         assertBudget,
         chargeLLM,
+        traceLLM: traceLLMBound,
       },
     });
   });

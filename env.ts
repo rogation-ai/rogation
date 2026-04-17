@@ -49,6 +49,22 @@ export const env = createEnv({
       Sentry initialization is a no-op so dev + CI don't need a project.
     */
     SENTRY_DSN: z.string().url().optional(),
+
+    /*
+      Server-side PostHog key for webhook events (signup_completed etc.).
+      Optional; capture is a no-op when unset so dev works without a
+      PostHog project.
+    */
+    POSTHOG_API_KEY: z.string().optional(),
+
+    /*
+      Langfuse credentials for LLM trace capture via the router's onTrace
+      hook. All three are optional; the wrapper in lib/llm/langfuse.ts
+      no-ops when the secret + public keys aren't both set.
+    */
+    LANGFUSE_SECRET_KEY: z.string().optional(),
+    LANGFUSE_PUBLIC_KEY: z.string().optional(),
+    LANGFUSE_HOST: z.string().url().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -61,6 +77,17 @@ export const env = createEnv({
       errors. Optional — browser Sentry is a no-op when unset.
     */
     NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
+
+    /*
+      PostHog public key for browser analytics. Optional.
+      NEXT_PUBLIC_POSTHOG_HOST defaults to https://us.posthog.com when
+      unset, which is the US cloud ingest.
+    */
+    NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
+    NEXT_PUBLIC_POSTHOG_HOST: z
+      .string()
+      .url()
+      .default("https://us.posthog.com"),
   },
   runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
@@ -70,8 +97,14 @@ export const env = createEnv({
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     SENTRY_DSN: process.env.SENTRY_DSN,
+    POSTHOG_API_KEY: process.env.POSTHOG_API_KEY,
+    LANGFUSE_SECRET_KEY: process.env.LANGFUSE_SECRET_KEY,
+    LANGFUSE_PUBLIC_KEY: process.env.LANGFUSE_PUBLIC_KEY,
+    LANGFUSE_HOST: process.env.LANGFUSE_HOST,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
+    NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   },

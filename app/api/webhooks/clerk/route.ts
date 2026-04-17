@@ -4,6 +4,12 @@ import { db } from "@/db/client";
 import { accounts, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { env } from "@/env";
+import { EVENTS } from "@/lib/analytics/events";
+import {
+  captureServer,
+  flushServer,
+  identifyServer,
+} from "@/lib/analytics/posthog-server";
 
 /*
   Clerk webhook handler.
@@ -75,6 +81,14 @@ export async function POST(req: NextRequest) {
         .set({ ownerUserId: user.id })
         .where(eq(accounts.id, account.id));
     });
+
+    // Activation funnel step 1 (plan §7). PostHog no-ops when the
+    // server key isn't set, so this is safe in dev. Flush before
+    // responding so Vercel's serverless worker doesn't kill the
+    // background batch.
+    identifyServer(clerkUserId, { email, plan: "free" });
+    captureServer(clerkUserId, EVENTS.SIGNUP_COMPLETED, { plan: "free" });
+    await flushServer();
 
     return NextResponse.json({ ok: true });
   }
