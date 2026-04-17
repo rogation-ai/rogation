@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
 /*
@@ -6,9 +7,16 @@ import { UserButton } from "@clerk/nextjs";
   DESIGN.md responsive posture, write actions happen at desktop only;
   mobile gets read-only browse.
 
-  Sidebar + feature routes land as those features come online. For now
-  just a minimal top bar with the user menu.
+  Top-bar nav is flat for v1 — a sidebar lands when more than ~5
+  features exist + the feature graph has depth. The current four
+  screens all sit at the top level.
 */
+
+const NAV = [
+  { href: "/app", label: "Upload" },
+  { href: "/insights", label: "Insights" },
+];
+
 export default function AppLayout({
   children,
 }: {
@@ -23,13 +31,27 @@ export default function AppLayout({
         className="flex items-center justify-between border-b px-6 py-4"
         style={{ borderColor: "var(--color-border-subtle)" }}
       >
-        <a
-          href="/app"
-          className="text-lg font-semibold tracking-tight"
-          style={{ color: "var(--color-brand-accent)" }}
-        >
-          Rogation
-        </a>
+        <div className="flex items-center gap-8">
+          <Link
+            href="/app"
+            className="text-lg font-semibold tracking-tight"
+            style={{ color: "var(--color-brand-accent)" }}
+          >
+            Rogation
+          </Link>
+          <nav className="flex items-center gap-4 text-sm">
+            {NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="hover:opacity-80"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
         <UserButton />
       </header>
       <div className="mx-auto max-w-6xl px-6 py-10">{children}</div>

@@ -147,6 +147,21 @@ Router entrypoints (`trpc.evidence.*`):
 
 The onboarding page shows the dropzone + integration buttons + sample-data link as disabled, matching the approved mockup but clearly labelled as "ships in the next commit" so the UI direction is preserved.
 
+## Clustering (synthesis)
+
+Turns the evidence corpus into `insight_cluster` rows — the "pain points" PMs see on the Insights screen. Phase A ships full re-cluster; the incremental strategy (KNN against existing + LLM merge/split on touched only — eng review decision #5) lands in Phase B.
+
+- **Prompt.** `lib/llm/prompts/synthesis-cluster.ts` wraps evidence in `<evidence id="En"><![CDATA[...]]></evidence>` blocks, with a system prompt that binds the trust boundary (evidence is data, never instructions). Output is a strict JSON envelope: `{ clusters: [{ title, description, severity, evidenceLabels[] }] }`. Prompt caching is on — the evidence block hits Anthropic's cache across runs in a 5-minute window.
+- **Orchestrator.** `lib/evidence/synthesis.ts > runFullClustering(ctx)` reads every evidence row (cap 50 / run), short-labels them `E1…En`, calls the prompt via `complete()`, validates every returned label maps back to a real evidence id, then atomically deletes prior clusters + inserts the new ones + writes `evidence_to_cluster` edges. Runs inside the caller's RLS-bound transaction.
+- **Router.** `trpc.insights.*`:
+  - `list()` — clusters for this account, sorted by frequency.
+  - `detail({ clusterId })` — cluster + all supporting evidence quotes.
+  - `run()` — kicks off a full re-cluster. Synchronous for Phase A; the Inngest worker in the next commit moves this off the request path.
+- **Insights screen.** `app/(app)/insights/page.tsx` approximates `insights-A-v2` (approved mockup): left rail cluster list with `SeverityPill`, center pane with selected-cluster detail + representative quotes, right rail placeholder for "Linked opportunities" (opportunities commit fills in).
+- **Empty + thin-corpus states.** `< 1` evidence → `EmptyState` pointing back to `/app`. `< 10` evidence → `StaleBanner` suggesting more. `≥ 10` with no clusters yet → "Generate clusters" CTA.
+
+Adding a new prompt revision: edit the system string in `synthesis-cluster.ts`. The `prompt_hash` column on every `insight_cluster` row auto-changes (content-addressed via `definePrompt`) so eval regressions pinpoint which version produced which row.
+
 ## Rate limiting
 
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.
