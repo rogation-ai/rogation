@@ -80,6 +80,15 @@ export const env = createEnv({
     STRIPE_WEBHOOK_SIGNING_SECRET: z.string().min(1),
     STRIPE_PRICE_ID_SOLO: z.string().min(1),
     STRIPE_PRICE_ID_PRO: z.string().min(1),
+
+    /*
+      Upstash Redis REST credentials for rate limiting. Both optional —
+      when either is missing, lib/rate-limit.ts fails open (returns
+      { success: true }). Dev + CI run without Upstash; production sets
+      both and limits engage automatically.
+    */
+    UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+    UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -120,6 +129,8 @@ export const env = createEnv({
     STRIPE_WEBHOOK_SIGNING_SECRET: process.env.STRIPE_WEBHOOK_SIGNING_SECRET,
     STRIPE_PRICE_ID_SOLO: process.env.STRIPE_PRICE_ID_SOLO,
     STRIPE_PRICE_ID_PRO: process.env.STRIPE_PRICE_ID_PRO,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,

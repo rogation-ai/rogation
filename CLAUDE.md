@@ -92,6 +92,18 @@ Test expectations for every new feature commit:
 - When adding an error handler, write a test that triggers the error.
 - Never commit code that makes existing tests fail.
 
+## Rate limiting
+
+Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.
+
+- **Presets.** `lib/rate-limit.ts > RATE_LIMIT_PRESETS` is the audit trail. Surfaces: `share-link` (by IP, for `/s/:token` enumeration protection), `spec-chat` (by accountId, for chat refinement abuse), `checkout-create` (by accountId, 10/hr — Stripe API costs real money when spammed), `webhook` (per-IP defense in depth on signed endpoints).
+- **Fail open.** `checkLimit(preset, identifier)` returns `{ success: true }` when Upstash isn't configured. Dev + CI run without Redis. Production should set `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`. Missing keys in prod are silent — the tradeoff is choose one of: (a) keep it optional for easy dev, or (b) make it required later when we can't boot without it.
+- **Usage pattern (tRPC resolver).**
+  - Call `await checkLimit(preset, ctx.accountId)` at the top.
+  - On `!result.success`, throw `TRPCError.TOO_MANY_REQUESTS` with `cause: { type: "rate_limited", limit, resetAt }` so the UI can show "try again in X minutes."
+- **Applied today.** `billing.createCheckout` (10 / hour / account) — throttles Stripe-API-costing operations. `/s/*` + `spec-chat` limiters activate when those surfaces ship (infrastructure is ready; middleware hooks are a one-liner).
+- **Tuning.** Watch Upstash's analytics dashboard; if legitimate traffic hits the wall, bump the preset. The preset table is the one place to edit — every caller picks up the new limit automatically.
+
 ## Billing (Stripe)
 
 Stripe is the source of truth for subscription state. `account.plan`, `account.stripe_customer_id`, `account.stripe_subscription_id`, and `account.subscription_status` all mirror Stripe — never the other way around. Changes flow from Stripe → webhook → DB.
