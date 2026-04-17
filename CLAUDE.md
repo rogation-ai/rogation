@@ -162,6 +162,20 @@ Turns the evidence corpus into `insight_cluster` rows — the "pain points" PMs 
 
 Adding a new prompt revision: edit the system string in `synthesis-cluster.ts`. The `prompt_hash` column on every `insight_cluster` row auto-changes (content-addressed via `definePrompt`) so eval regressions pinpoint which version produced which row.
 
+## Opportunities (What to build)
+
+Turns clusters into ranked, shippable opportunities with 5 weight sliders and live client-side re-rank (design review §14.4).
+
+- **Prompt.** `lib/llm/prompts/opportunity-score.ts` takes short-labeled clusters (with representative quotes) and returns a list of opportunities with 5 primitives each: `impact.{retention,revenue,activation}`, `strategy`, `effort` (XS/S/M/L/XL), `confidence`. The LLM does NOT compute a final score — that's the server's job from the primitives + current weights.
+- **Orchestrator.** `lib/evidence/opportunities.ts > runFullOpportunities(ctx)` reads clusters (cap 50), samples 3 quotes each, calls the LLM, validates labels map back to real cluster ids, wipes prior opportunities + writes new ones + edges. One LLM call per re-gen.
+- **Pure score formula.** `computeScore(primitives, clusterIds, frequencies, weights)` — weighted sum of `(frequency-normalised, impact-weighted, strategy) - w.effort * effort` multiplied by `confidence`. Clamped `>= 0`. Unit tested in `test/opportunity-score.test.ts`. Both the UI's drag-feedback path and the server's `rescoreOpportunities()` call the exact same formula — drift there would silently change ranked output.
+- **Weights.** Stored in `opportunity_score_weights` (one row per account, defaults to all 1s). `readWeights(ctx)` / `writeWeights(ctx, ws)`. Sliders are floats in [0, 3]; anything above 3 is noise.
+- **Router.** `trpc.opportunities.*`: `list`, `forCluster({clusterId})`, `weights`, `run`, `updateWeights({weights})`.
+  - `run` invokes the LLM (expensive, regenerate button on UI).
+  - `updateWeights` persists + calls `rescoreOpportunities` server-side. The UI doesn't wait for this response — it re-ranks optimistically with the same formula during drag, and the server catches up on 300ms release debounce.
+- **/build screen.** `app/(app)/build/page.tsx`: ranked opportunity cards on the left, 5 labeled sliders + Reset button on the right. Reset reads the defaults from `trpc.opportunities.weights` (not hardcoded). `ConfidenceBadge` + effort chip + score on each row.
+- **Insights right rail.** `LinkedOpportunities(clusterId)` queries `opportunities.forCluster`. Shows "Turn into spec →" CTA pointing at `/build#opp-<id>` (anchor deep-link lands when spec editor ships).
+
 ## Rate limiting
 
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.

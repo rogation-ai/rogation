@@ -15,6 +15,7 @@ import { UserButton } from "@clerk/nextjs";
 const NAV = [
   { href: "/app", label: "Upload" },
   { href: "/insights", label: "Insights" },
+  { href: "/build", label: "What to build" },
 ];
 
 export default function AppLayout({

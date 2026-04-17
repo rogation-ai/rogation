@@ -195,31 +195,91 @@ export default function InsightsPage(): React.JSX.Element {
         )}
       </section>
 
-      {/* Right rail — opportunities placeholder */}
+      {/* Right rail — real linked opportunities for the selected cluster */}
       <aside>
-        <div
-          className="rounded-xl border p-4"
-          style={{
-            borderColor: "var(--color-border-subtle)",
-            background: "var(--color-surface-raised)",
-          }}
-        >
-          <p
-            className="mb-2 text-xs uppercase tracking-widest"
-            style={{ color: "var(--color-text-tertiary)" }}
-          >
-            Linked opportunities
-          </p>
-          <p
-            className="text-sm"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Opportunities ship in the next commit. Each cluster will
-            link here with a <span className="font-medium">Turn into
-            spec →</span> action.
-          </p>
-        </div>
+        <LinkedOpportunities clusterId={selectedId} />
       </aside>
+    </div>
+  );
+}
+
+function LinkedOpportunities({
+  clusterId,
+}: {
+  clusterId: string | null;
+}): React.JSX.Element {
+  const q = trpc.opportunities.forCluster.useQuery(
+    { clusterId: clusterId ?? "" },
+    { enabled: Boolean(clusterId) },
+  );
+
+  const items = q.data ?? [];
+
+  return (
+    <div
+      className="rounded-xl border p-4"
+      style={{
+        borderColor: "var(--color-border-subtle)",
+        background: "var(--color-surface-raised)",
+      }}
+    >
+      <p
+        className="mb-3 text-xs uppercase tracking-widest"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Linked opportunities
+      </p>
+      {!clusterId ? (
+        <p
+          className="text-sm"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Select a cluster to see the opportunities that address it.
+        </p>
+      ) : q.isLoading ? (
+        <p style={{ color: "var(--color-text-tertiary)" }}>Loading…</p>
+      ) : items.length === 0 ? (
+        <p
+          className="text-sm"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          No opportunities linked yet.{" "}
+          <a
+            href="/build"
+            className="underline underline-offset-2"
+            style={{ color: "var(--color-brand-accent)" }}
+          >
+            Generate on What to build.
+          </a>
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {items.map((o) => (
+            <li key={o.id} className="flex flex-col gap-1">
+              <a
+                href={`/build#opp-${o.id}`}
+                className="text-sm font-medium hover:underline"
+                style={{ color: "var(--color-text-primary)" }}
+              >
+                {o.title}
+              </a>
+              <span
+                className="text-xs"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                score {o.score.toFixed(2)}
+              </span>
+            </li>
+          ))}
+          <a
+            href="/build"
+            className="mt-2 inline-block rounded-md px-3 py-1.5 text-center text-sm font-medium text-white transition hover:brightness-110"
+            style={{ background: "var(--color-brand-accent)" }}
+          >
+            Turn into spec →
+          </a>
+        </ul>
+      )}
     </div>
   );
 }
