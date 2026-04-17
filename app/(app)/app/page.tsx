@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { NumberedStepper } from "@/components/ui/NumberedStepper";
 import { EVENTS } from "@/lib/analytics/events";
@@ -9,20 +9,32 @@ import { capture } from "@/lib/analytics/posthog-client";
 /*
   Onboarding — matches approved mockup
   ~/.gstack/projects/rogation-ai-rogation/designs/onboarding-upload-20260417/
-  variant-A-v2.png. The one job: drop files / paste tickets / connect
-  a source, get to first insight in ~90 seconds.
+  variant-A-v2.png. Drop files OR paste text OR connect a source, get
+  to first insight in ~90 seconds.
 
-  This commit wires the paste path end-to-end. File drop is rendered
-  but disabled with a "File upload lands next" note — keeps the mockup
-  intact while the upload Route Handler ships separately.
+  This commit wires the dropzone to /api/evidence/upload for .txt
+  files. Paste was wired in the previous commit. PDF / VTT / CSV are
+  still disabled — the Route Handler rejects them with a clear
+  "unsupported" message that the UI surfaces inline.
 
-  Stepper state is driven by live evidence count from the server so a
-  returning user who already has data doesn't see "Upload" as current.
-  At 10+ pieces we advance to Cluster automatically (clustering ships
-  later; for now it shows as current-but-waiting).
+  Stepper advances from "Upload" to "Cluster" once the account has
+  hit the thin-corpus threshold (10 pieces). Clustering itself lands
+  with the synthesis commit.
 */
 
-const THIN_CORPUS_THRESHOLD = 10; // Plan §11 default; Insights feels meaningful here.
+const THIN_CORPUS_THRESHOLD = 10;
+
+interface UploadResult {
+  filename: string;
+  id?: string;
+  deduped?: boolean;
+  error?: string;
+}
+
+interface UploadResponse {
+  results: UploadResult[];
+  capHit: { code: string; message: string } | null;
+}
 
 export default function AppHome(): React.JSX.Element {
   const me = trpc.account.me.useQuery();
@@ -35,33 +47,29 @@ export default function AppHome(): React.JSX.Element {
     },
   });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pasteText, setPasteText] = useState("");
   const [firstUploadFired, setFirstUploadFired] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResults, setUploadResults] = useState<UploadResult[] | null>(
+    null,
+  );
 
   const count = evCount.data?.count ?? 0;
-  // `insight` advancement lands with the clustering commit — for now we
-  // only walk between upload and cluster based on corpus size.
   const onboardingStep: "upload" | "cluster" =
     count < THIN_CORPUS_THRESHOLD ? "upload" : "cluster";
   const remaining = Math.max(THIN_CORPUS_THRESHOLD - count, 0);
 
-  // Fire first_upload_started once per session when the user successfully
-  // creates their first piece of evidence. Funnel step 2 (plan §7).
   useEffect(() => {
     if (count > 0 && !firstUploadFired) {
       capture(EVENTS.FIRST_UPLOAD_STARTED, {
-        sourceType: "paste",
+        sourceType: "paste_or_upload",
         fileCount: count,
       });
       setFirstUploadFired(true);
     }
   }, [count, firstUploadFired]);
-
-  if (me.isLoading || evCount.isLoading) {
-    return (
-      <p style={{ color: "var(--color-text-tertiary)" }}>Loading…</p>
-    );
-  }
 
   async function submitPaste() {
     const trimmed = pasteText.trim();
@@ -70,8 +78,54 @@ export default function AppHome(): React.JSX.Element {
       await paste.mutateAsync({ content: trimmed });
       setPasteText("");
     } catch {
-      // tRPC shows errors via paste.error below; no toast yet.
+      // tRPC exposes the error via paste.error below.
     }
+  }
+
+  async function uploadFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+
+    setIsUploading(true);
+    setUploadResults(null);
+
+    const form = new FormData();
+    for (const file of list) form.append("files", file);
+
+    try {
+      const res = await fetch("/api/evidence/upload", {
+        method: "POST",
+        body: form,
+      });
+      const body = (await res.json()) as UploadResponse | { error: string };
+      if (!res.ok) {
+        setUploadResults([
+          { filename: "", error: "error" in body ? body.error : "Upload failed" },
+        ]);
+      } else if ("results" in body) {
+        setUploadResults(body.results);
+        utils.evidence.count.invalidate();
+        utils.account.me.invalidate();
+      }
+    } catch (err) {
+      setUploadResults([
+        { filename: "", error: err instanceof Error ? err.message : "Network error" },
+      ]);
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) void uploadFiles(e.dataTransfer.files);
+  }
+
+  if (me.isLoading || evCount.isLoading) {
+    return (
+      <p style={{ color: "var(--color-text-tertiary)" }}>Loading…</p>
+    );
   }
 
   return (
@@ -92,11 +146,22 @@ export default function AppHome(): React.JSX.Element {
 
       <section className="w-full max-w-xl">
         <div
-          aria-disabled="true"
-          className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-16 text-center"
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragOver(true);
+          }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={onDrop}
+          className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-16 text-center transition"
           style={{
-            borderColor: "var(--color-border-default)",
-            background: "var(--color-surface-raised)",
+            borderColor: isDragOver
+              ? "var(--color-brand-accent)"
+              : "var(--color-border-default)",
+            background: isDragOver
+              ? "var(--color-surface-marketing)"
+              : "var(--color-surface-raised)",
+            opacity: isUploading ? 0.6 : 1,
           }}
         >
           <p
@@ -106,15 +171,58 @@ export default function AppHome(): React.JSX.Element {
               color: "var(--color-text-primary)",
             }}
           >
-            Drop files → 3 insights in ~90 seconds
+            {isUploading
+              ? "Uploading…"
+              : "Drop files → 3 insights in ~90 seconds"}
           </p>
           <p
-            className="text-xs uppercase tracking-widest"
+            className="text-xs"
             style={{ color: "var(--color-text-tertiary)" }}
           >
-            File upload lands in the next commit. Paste below for now.
+            .txt / .md today · PDF / VTT / CSV next commit
           </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".txt,.md,.log,text/*"
+            className="hidden"
+            onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+          />
         </div>
+
+        {uploadResults && (
+          <ul
+            className="mt-3 divide-y rounded-md border text-sm"
+            style={{ borderColor: "var(--color-border-subtle)" }}
+          >
+            {uploadResults.map((r, i) => (
+              <li
+                key={`${r.filename}-${i}`}
+                className="flex items-center justify-between gap-3 px-3 py-2"
+                style={{ borderColor: "var(--color-border-subtle)" }}
+              >
+                <span
+                  className="truncate"
+                  style={{ color: "var(--color-text-primary)" }}
+                >
+                  {r.filename || "(batch)"}
+                </span>
+                {r.error ? (
+                  <span style={{ color: "var(--color-danger)" }}>
+                    {r.error}
+                  </span>
+                ) : r.deduped ? (
+                  <span style={{ color: "var(--color-text-tertiary)" }}>
+                    deduped
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--color-success)" }}>added</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
 
         <textarea
           value={pasteText}

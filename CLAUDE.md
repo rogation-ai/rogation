@@ -129,15 +129,21 @@ Router entrypoints (`trpc.evidence.*`):
 - `delete({ id })` — 404 if not yours.
 - `count()` — drives the onboarding stepper's current-step state.
 
+**Shared ingest pipeline.** `lib/evidence/ingest.ts > ingestEvidence()` is the single write path for both the paste mutation and the file-upload Route Handler. Contract: assertLimit → normalize + hash → dedup → insert → embed. Caller owns the RLS-bound transaction. Never bypass this helper to write an `evidence` row from elsewhere — otherwise dedup, budget, and embedding stop matching across paths.
+
+**File upload.** `POST /api/evidence/upload` (multipart). Each file flows through `parseTextFile()` (2 MB / file, 10 MB / batch, 20 files max) then `ingestEvidence()`. Per-file results are returned individually so the UI shows a mixed success/dedup/reject list. A Free-plan cap hit stops the batch to stay within limits. Today: `.txt / .md / .log / .csv / .json / .yaml` by extension or `text/*` mime. PDF / VTT / CSV-specific parsers with column awareness land in focused follow-up commits.
+
+**Auth outside tRPC.** `server/auth.ts > withAuthedAccountTx(fn)` is the Route-Handler-facing equivalent of the tRPC authed middleware: resolves the Clerk session → looks up user + account + plan → opens a transaction → binds `app.current_account_id`. Do NOT reuse from feature code — feature code goes through tRPC. This helper exists because multipart uploads can't ride tRPC cleanly.
+
 **PostHog event:** `FIRST_UPLOAD_STARTED` fires once per session when `evidence.count` crosses zero — funnel step 2 from plan §7.
 
-**What's not in this commit (file-upload follow-ups):**
+**What's not in this commit (follow-ups):**
 
-- `/api/evidence/upload` Route Handler for multipart files.
-- txt / PDF / VTT / CSV parsers.
+- PDF / VTT / CSV parsers with structural awareness (papaparse, pdf-parse, custom VTT).
 - Integration pull (Zendesk / PostHog / Canny).
 - Inngest worker for async embedding at batch scale.
 - Sample-data seeder.
+- Evidence library screen listing every row.
 
 The onboarding page shows the dropzone + integration buttons + sample-data link as disabled, matching the approved mockup but clearly labelled as "ships in the next commit" so the UI direction is preserved.
 
