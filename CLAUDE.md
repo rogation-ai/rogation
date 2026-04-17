@@ -67,6 +67,14 @@ All env reads go through `env.ts` (typed via `@t3-oss/env-nextjs` + zod). Never 
 
 Every data row belongs to an account. Three layers enforce this:
 
-1. **ESLint rule (layer 1, this commit).** `no-restricted-imports` blocks direct imports of `@/db/client` outside `db/`, `server/trpc.ts`, `app/api/webhooks/**`, and `scripts/**`. Feature code reaches the DB only via `ctx.db` in a tRPC procedure — where `ctx.accountId` is available and expected in every `.where()`.
-2. **scoped(db, accountId) proxy (layer 2, follow-up commit).** Generic per-table helpers that pre-apply `accountId` to every query. Eliminates the "just remember to add the WHERE" class of bug.
-3. **Postgres RLS (layer 3, follow-up commit).** Belt-and-suspenders at the database. Even a compromised app cannot read across accounts.
+1. **ESLint rule (layer 1).** `no-restricted-imports` blocks direct imports of `@/db/client` outside `db/`, `server/trpc.ts`, `app/api/webhooks/**`, and `scripts/**`. Feature code reaches the DB only via `ctx.db` in a tRPC procedure.
+2. **Transaction-scoped session variable (layer 2).** `authedProcedure` wraps every resolver in a Postgres transaction and calls `set_config('app.current_account_id', <accountId>, true)` via `bindAccountToTx()` in `db/scoped.ts`. Inside the resolver, `ctx.db` is the transaction handle — every query is filtered by RLS policies.
+3. **Postgres RLS (layer 3).** Migration `0001_rls_policies.sql` enables RLS on every account-scoped table with a `FOR ALL` policy that reads `app.current_account_id()`. Even if the app layer forgets a `.where()`, Postgres returns only the caller's rows. WITH CHECK clauses reject cross-account writes.
+
+**Exceptions (bypass RLS intentionally):**
+
+- Migrations run as the table owner.
+- The Clerk webhook runs before an auth session exists; it imports `db` directly (allowlisted in the ESLint rule) and writes without the session variable set. This is safe because the webhook creates new rows rather than reading other tenants' data.
+- `createContext` in `server/trpc.ts` reads `users.clerkUserId -> accountId` outside the transaction, because the account hasn't been resolved yet. This read is bounded to the one row keyed by the Clerk user id.
+
+**Adding a new account-scoped table?** Every new table with an `account_id` column needs a matching `CREATE POLICY` block in a new migration. There is no inheritance — Postgres RLS is per-table. Copy the pattern from `0001_rls_policies.sql`.

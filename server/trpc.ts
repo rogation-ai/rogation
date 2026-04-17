@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db } from "@/db/client";
+import { bindAccountToTx, type Tx } from "@/db/scoped";
 import { users, accounts } from "@/db/schema";
 
 /*
@@ -16,22 +17,27 @@ import { users, accounts } from "@/db/schema";
   2. publicProcedure — no auth. Landing page queries, share links.
 
   3. authedProcedure — requires a valid Clerk session AND a resolved user
-     row in our DB. Injects ctx.accountId + ctx.userId into every resolver.
+     row in our DB. Wraps the resolver in a transaction that calls
+     set_config('app.current_account_id', <accountId>, true), so every
+     query inside is RLS-filtered by the Postgres policies from
+     migration 0001.
 
-  Tenant safety: every authed procedure resolver is expected to pass
-  ctx.accountId into its .where() clause. A follow-up commit adds:
-  - generic scoped(db, accountId) proxy with per-table helpers
-  - ESLint rule banning raw `db` imports outside db/ + webhooks
-  - Postgres RLS policies as belt-and-suspenders
+     The resolver's `ctx.db` is the transaction handle. Reads + writes
+     are account-bound automatically — a raw `ctx.db.select().from(evidence)`
+     returns only the caller's rows, no WHERE needed. (Still write the
+     WHERE for query planning; RLS is belt-and-suspenders, not an excuse
+     to skip defensive filters.)
 */
 
 type ClerkAuth = Awaited<ReturnType<typeof auth>>;
+
+export type DbLike = typeof db | Tx;
 
 export interface Context {
   clerkUserId: string | null;
   userId: string | null;
   accountId: string | null;
-  db: typeof db;
+  db: DbLike;
 }
 
 export async function createContext(): Promise<Context> {
@@ -50,6 +56,8 @@ export async function createContext(): Promise<Context> {
     return { clerkUserId: null, userId: null, accountId: null, db };
   }
 
+  // This read happens OUTSIDE the RLS transaction because we don't yet
+  // know the account. Running as table owner, so RLS doesn't filter.
   const [row] = await db
     .select({ userId: users.id, accountId: users.accountId })
     .from(users)
@@ -83,7 +91,7 @@ const t = initTRPC.context<Context>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
-const requireAuth = t.middleware(({ ctx, next }) => {
+const requireAuth = t.middleware(async ({ ctx, next }) => {
   if (!ctx.clerkUserId) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
@@ -96,14 +104,24 @@ const requireAuth = t.middleware(({ ctx, next }) => {
       message: "Account is being provisioned — try again in a moment.",
     });
   }
-  // Narrow the types so authed resolvers don't have to null-check.
-  return next({
-    ctx: {
-      ...ctx,
-      clerkUserId: ctx.clerkUserId,
-      userId: ctx.userId,
-      accountId: ctx.accountId,
-    },
+
+  const clerkUserId = ctx.clerkUserId;
+  const userId = ctx.userId;
+  const accountId = ctx.accountId;
+
+  // Open a transaction, bind the RLS session var, and run the resolver
+  // inside. Every query through ctx.db is account-filtered by Postgres.
+  return await db.transaction(async (tx) => {
+    await bindAccountToTx(tx, accountId);
+    return next({
+      ctx: {
+        ...ctx,
+        clerkUserId,
+        userId,
+        accountId,
+        db: tx,
+      },
+    });
   });
 });
 

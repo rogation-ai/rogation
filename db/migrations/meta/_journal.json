@@ -8,6 +8,13 @@
       "when": 1776425873855,
       "tag": "0000_smiling_prowler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776505200000,
+      "tag": "0001_rls_policies",
+      "breakpoints": false
     }
   ]
 }
