@@ -112,6 +112,35 @@ Shared primitives from DESIGN.md §6 live under `components/ui/` with a `.storie
 
 Remaining from the design system: `CitationChip`, `FrequencyBar`, `SourceIcon`, `SegmentTag`, `ReadinessGrade`, `StreamingCursor`, `StaleBanner`, `ThinCorpusNudge`, `NumberedStepper`, `IntegrationLogoButton`. Lands incrementally alongside the feature commits that consume them.
 
+## Evidence ingestion
+
+First feature pipeline. PMs land on `/app`, see the onboarding wizard (approved mockup: `onboarding-upload-A-v2`), paste transcripts or support tickets, and hit "Add evidence." Each paste:
+
+1. `ctx.assertLimit("evidence")` — Free cap stops at 10. Throws FORBIDDEN with `plan_limit_reached` so the UI can render the paywall.
+2. `normalizeEvidenceText()` + `hashEvidenceContent()` — SHA-256 of the normalized text (BOM stripped, CRLF → LF, trailing-whitespace trimmed, exactly one trailing newline). Lib: `lib/evidence/hash.ts`.
+3. Dedup: query by `(accountId, contentHash)`; if found, return the existing row with `deduped: true` instead of counting twice.
+4. Insert evidence row (RLS-scoped via `ctx.db`).
+5. `embed()` from `lib/llm/router.ts` via OpenAI `text-embedding-3-small` (1536-d — matches the `evidence_embedding.vector` column). Stored synchronously. Batch upload + Inngest worker land when file-upload ships.
+
+Router entrypoints (`trpc.evidence.*`):
+
+- `paste({ content, sourceRef?, segment? })` — text-only; 128 KB max.
+- `list({ limit, cursor? })` — newest first, RLS-scoped.
+- `delete({ id })` — 404 if not yours.
+- `count()` — drives the onboarding stepper's current-step state.
+
+**PostHog event:** `FIRST_UPLOAD_STARTED` fires once per session when `evidence.count` crosses zero — funnel step 2 from plan §7.
+
+**What's not in this commit (file-upload follow-ups):**
+
+- `/api/evidence/upload` Route Handler for multipart files.
+- txt / PDF / VTT / CSV parsers.
+- Integration pull (Zendesk / PostHog / Canny).
+- Inngest worker for async embedding at batch scale.
+- Sample-data seeder.
+
+The onboarding page shows the dropzone + integration buttons + sample-data link as disabled, matching the approved mockup but clearly labelled as "ships in the next commit" so the UI direction is preserved.
+
 ## Rate limiting
 
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.
