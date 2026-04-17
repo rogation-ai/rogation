@@ -1,4 +1,16 @@
-export default function Home() {
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+
+export default async function Home() {
+  /*
+    If the visitor already has a session, skip the marketing page and
+    take them to the signed-in shell. Server-side auth() runs inside the
+    Clerk middleware, so we have a trusted session here.
+  */
+  const { userId } = await auth();
+  if (userId) redirect("/app");
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-20">
       <header className="flex items-center justify-between pb-24">
@@ -15,7 +27,12 @@ export default function Home() {
           <a href="#">Product</a>
           <a href="#">Pricing</a>
           <a href="#">Docs</a>
-          <a href="#">Log in</a>
+          <Link
+            href="/sign-in"
+            className="transition hover:text-[var(--color-text-primary)]"
+          >
+            Log in
+          </Link>
         </nav>
       </header>
 
@@ -36,12 +53,13 @@ export default function Home() {
         evidence, fast.
       </p>
 
-      <button
-        className="mt-8 rounded-md px-5 py-3 text-sm font-medium text-white transition hover:brightness-110"
+      <Link
+        href="/sign-up"
+        className="mt-8 inline-block rounded-md px-5 py-3 text-sm font-medium text-white transition hover:brightness-110"
         style={{ background: "var(--color-brand-accent)" }}
       >
         Start free
-      </button>
+      </Link>
 
       <p
         className="mt-24 text-xs uppercase tracking-widest"
