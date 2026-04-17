@@ -67,8 +67,21 @@ All env reads go through `env.ts` (typed via `@t3-oss/env-nextjs` + zod). Never 
 
 - Framework: Vitest 4 (unit + integration). Playwright for E2E and eval infra land in later commits.
 - Command: `bun run test` (CI single run), `bun run test:watch` (dev), `bun run test:ui`.
+- All-in-one local gate: `bun run check` runs typecheck + lint + build + test. Same gate CI runs.
 - Integration tests that need Postgres gate on `TEST_DATABASE_URL`. Missing → test is skipped with a message. Never point it at a DB with real data — the harness creates + drops schemas.
 - See [TESTING.md](TESTING.md) for layers, conventions, and local setup (docker pgvector).
+
+## CI
+
+GitHub Actions at `.github/workflows/ci.yml`. Every push to `main` and every PR runs:
+
+1. `bun install --frozen-lockfile`
+2. `bun run typecheck` (tsc --noEmit)
+3. `bun run lint` (next lint → eslint)
+4. `bun run build` (next build)
+5. `bun run test` (vitest run, with a pgvector service container so `TEST_DATABASE_URL` is set and tenant-iso tests actually execute)
+
+`concurrency: cancel-in-progress: true` drops stale runs when a newer commit arrives on the same ref. Failing any step fails the PR — no required-check bypass.
 
 Test expectations for every new feature commit:
 

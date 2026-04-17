@@ -15,7 +15,8 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "check": "bun run typecheck && bun run lint && bun run build && bun run test"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.2",
