@@ -113,6 +113,17 @@ export const evidenceRouter = router({
 });
 ```
 
+## Token budget
+
+The LLM router's `onUsage` hook plugs into real enforcement via `lib/llm/usage.ts` and the `llm_usage` table.
+
+- **Schema.** One row per `(account_id, month)`, PK on that pair. Columns accumulate `tokens_in`, `tokens_out`, `cache_read_tokens`, `cache_create_tokens`, `calls`. Month key is UTC `YYYY-MM` text — no timezone games at the DB level.
+- **Charge path.** Every authed tRPC resolver has `ctx.chargeLLM(usage)`. Pass it straight to `complete()`: `await complete(prompt, input, { onUsage: ctx.chargeLLM })`. `chargeLLM` calls `chargeAndEnforce()`: UPSERTs the monthly row AND throws `FORBIDDEN` when the call pushed the account over the hard cap. The spend is recorded *before* the throw, so overruns are visible in logs + alerting.
+- **Pre-call gate.** Batch LLM jobs (embed 500 evidence rows, re-cluster) should call `ctx.assertBudget()` once up front to fail fast when the account is already over the cap. Avoids burning provider latency on a call that's going to reject.
+- **Soft cap (80%).** `tokenBudgetSoftCap(plan)` from `lib/plans.ts` returns the warning threshold. The UI banner reads it off `account.me.budget`. Email warning lands with the Stripe/notifications commit.
+- **Monthly rollover.** A new UTC month = a new `(account, month)` row. No cron needed; the UPSERT finds no existing row and inserts. Cross-month isolation is verified in `test/llm-usage.test.ts`.
+- **No per-call audit in this table.** One-row-per-month is deliberately O(1) for the read that happens on every LLM call. Per-call audit belongs in the eval-infra (Langfuse/Braintrust, observability commit) and Sentry traces.
+
 ## LLM router
 
 Every LLM call goes through `lib/llm/router.ts`. Never import `@anthropic-ai/sdk` or `openai` anywhere else.

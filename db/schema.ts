@@ -515,6 +515,40 @@ export const integrationCredentials = pgTable(
   ],
 );
 
+/*
+  Monthly LLM usage accumulation. One row per (account, month). Every
+  call through lib/llm/router.ts charges this table via the onUsage hook
+  in the tRPC authed middleware.
+
+  Month is stored as `YYYY-MM` text for portable indexing (no timezone
+  games at the DB level; callers compute the UTC month key once).
+
+  Why a rolling monthly bucket rather than per-call rows:
+  - The "current month spend" query must be a single row read, not an
+    aggregate scan, since it runs on every LLM call inside the tRPC
+    request path. O(1) PK read beats SUM(tokens_in) every time.
+  - Per-call audit trail lives in the eval-infra (Langfuse/Braintrust)
+    and in Sentry traces — not here.
+*/
+export const llmUsage = pgTable(
+  "llm_usage",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    month: varchar("month", { length: 7 }).notNull(),
+    tokensIn: integer("tokens_in").notNull().default(0),
+    tokensOut: integer("tokens_out").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheCreateTokens: integer("cache_create_tokens").notNull().default(0),
+    calls: integer("calls").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.month] })],
+);
+
 export const integrationState = pgTable(
   "integration_state",
   {
@@ -546,3 +580,5 @@ export type Opportunity = typeof opportunities.$inferSelect;
 export type Spec = typeof specs.$inferSelect;
 export type Outcome = typeof outcomes.$inferSelect;
 export type IntegrationCredential = typeof integrationCredentials.$inferSelect;
+export type LlmUsage = typeof llmUsage.$inferSelect;
+export type NewLlmUsage = typeof llmUsage.$inferInsert;

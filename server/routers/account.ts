@@ -6,6 +6,7 @@ import {
   exportHasWatermark,
   shareLinksHaveWatermark,
 } from "@/lib/plans";
+import { readBudget } from "@/lib/llm/usage";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
@@ -43,15 +44,17 @@ export const accountRouter = router({
       throw new Error("Account row missing for authenticated user");
     }
 
-    // Count all gated resources in parallel so PlanMeter renders in one
-    // round-trip. RLS keeps each count account-bound.
-    const [evidence, insights, opportunities, specs, integrations] =
+    // Count all gated resources + read the monthly budget in parallel so
+    // PlanMeter + token banner render in one round-trip. RLS keeps each
+    // count account-bound.
+    const [evidence, insights, opportunities, specs, integrations, budget] =
       await Promise.all([
         countResource(ctx.db, "evidence", ctx.accountId),
         countResource(ctx.db, "insights", ctx.accountId),
         countResource(ctx.db, "opportunities", ctx.accountId),
         countResource(ctx.db, "specs", ctx.accountId),
         countResource(ctx.db, "integrations", ctx.accountId),
+        readBudget(ctx.db, ctx.plan, ctx.accountId),
       ]);
 
     const limits = PLAN_LIMITS[ctx.plan];
@@ -72,6 +75,7 @@ export const accountRouter = router({
         outcomeTracking: limits.outcomeTracking,
         monthlyTokenBudget: limits.monthlyTokenBudget,
       },
+      budget,
     };
   }),
 });

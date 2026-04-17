@@ -15,6 +15,13 @@
       "when": 1776505200000,
       "tag": "0001_rls_policies",
       "breakpoints": false
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776431928591,
+      "tag": "0002_flaky_deathbird",
+      "breakpoints": true
     }
   ]
 }

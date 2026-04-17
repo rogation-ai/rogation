@@ -12,6 +12,13 @@ import {
   type LimitCheck,
   type PlanTier,
 } from "@/lib/plans";
+import {
+  assertTokenBudget,
+  chargeAndEnforce,
+  type BudgetState,
+  type MonthlyTotals,
+} from "@/lib/llm/usage";
+import type { Usage } from "@/lib/llm/router";
 
 /*
   tRPC server setup. Three pieces:
@@ -147,6 +154,18 @@ const requireAuth = t.middleware(async ({ ctx, next }) => {
     const assertLimit = (resource: CountableResource): Promise<LimitCheck> =>
       assertResourceLimit(tx, plan, accountId, resource);
 
+    // Pre-call token budget gate. Use before a batch LLM job or
+    // expensive single call to reject when the account is already over.
+    const assertBudget = (): Promise<BudgetState> =>
+      assertTokenBudget(tx, plan, accountId);
+
+    // onUsage sink for the LLM router. Pass this straight to
+    // complete(prompt, input, { onUsage: ctx.chargeLLM }).
+    // Charges the current-month row AND throws if the call put the
+    // account over the hard cap (the spend is still recorded).
+    const chargeLLM = (usage: Usage): Promise<MonthlyTotals> =>
+      chargeAndEnforce(tx, plan, accountId, usage);
+
     return next({
       ctx: {
         ...ctx,
@@ -156,6 +175,8 @@ const requireAuth = t.middleware(async ({ ctx, next }) => {
         plan,
         db: tx,
         assertLimit,
+        assertBudget,
+        chargeLLM,
       },
     });
   });
