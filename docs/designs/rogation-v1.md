@@ -218,18 +218,18 @@ Landing page flow: signup → upload wizard with sample-data fallback → first 
 9. **Thin-corpus problem.** PM uploads 3 interviews and gets weak insights. Minimum-evidence nudge + sample-data mode for "try before you upload."
 10. **Segment budget.** $49/mo must clear typical PM card discretion. Validate with 10+ discovery interviews before launch.
 
-## 11. Open decisions (not yet resolved)
+## 11. Open decisions (resolved 2026-04-17)
 
-These need resolution before or during `/plan-eng-review`. Each has a default recommendation.
+All 8 decisions resolved after /plan-eng-review and /plan-design-review. All defaults accepted with refinements noted below.
 
-1. **Which 3 integrations first?** Default: Zendesk, PostHog, Canny. Three-legged stool of evidence types (support, behavior, requests).
-2. **LLM provider and routing.** Default: Claude for synthesis, faster/cheaper model for spec generation. Router abstraction from day 1.
-3. **Clustering algorithm.** Default: hybrid — embedding KNN + LLM-as-judge refinement. Avoid pure vector clustering (generic blobs) and pure LLM clustering (expensive, unstable).
-4. **Scoring formula customization.** Default: expose 5 weights as sliders (frequency, revenue, retention, strategy, effort) + "reset to recommended." No arbitrary formulas in v1.
-5. **Spec format.** Default: opinionated single template (PRD + stories + acceptance + edges + QA). Export-only customization.
-6. **Outcome tracking without analytics ingestion.** Default: manual entry + optional PostHog auto-pairing by metric name. No full attribution in v1.
-7. **Readiness score formula.** Default: deterministic checklist (edges listed, validation specified, non-functional addressed, acceptance testable) as base; LLM adds notes. Not LLM-computed alone.
-8. **Sharing model.** Default: view-only public links, 30-day expiry, no auth. No comment threads in v1.
+1. **Which 3 integrations first?** **RESOLVED:** Zendesk, PostHog, Canny. Three-legged stool of evidence types (support, behavior, requests).
+2. **LLM provider and routing.** **RESOLVED + LOCKED BY ENG REVIEW:** Claude for synthesis, faster/cheaper model for generation. Typed router with task tiers, retries, streaming, budget hook, and Anthropic cache_control.
+3. **Clustering algorithm.** **RESOLVED + LOCKED BY ENG REVIEW:** Embed + KNN + LLM merge/split pass on touched clusters only. Cluster IDs stable across incremental re-clusters.
+4. **Scoring formula customization.** **RESOLVED:** 5 weight sliders (Frequency, Revenue, Retention, Strategic fit, Effort) + "reset to recommended." Live re-rank debounced 300ms with ghosted previous ranking (design review). No arbitrary formulas in v1.
+5. **Spec format.** **RESOLVED:** One opinionated template (PRD + user stories + acceptance criteria + edge cases + QA checklist). Export-only customization. No template editing in v1.
+6. **Outcome tracking.** **RESOLVED:** Manual metric entry + optional PostHog auto-pair by metric name, with an explicit name-mapping UI dropdown when auto-pair misses. User-owned mappings persisted.
+7. **Readiness score formula.** **RESOLVED + LOCKED BY DESIGN REVIEW:** Letter grade (A/B/C/D) + deterministic checklist (edges / validation / non-functional / acceptance testable) + LLM notes collapsible.
+8. **Sharing model.** **RESOLVED:** View-only public links, 30-day expiry, no auth. Entropy-safe tokens + rate limit on `/s/*` + revocation on subscription cancel (locked by eng review critical-gap fix). No comment threads in v1.
 
 ## 12. Decisions rejected (explicitly not doing)
 
@@ -321,13 +321,13 @@ Remaining screens (Evidence library, What to build, Spec editor, Outcomes) to be
 
 | Review | Trigger | Why | Runs | Status | Findings |
 | ------ | ------- | --- | ---- | ------ | -------- |
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | issues_open | 8 unresolved decisions (section 11), HOLD_SCOPE mode, 0 critical gaps |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | clean (resolved 2026-04-17) | HOLD_SCOPE mode, all 8 Section 11 decisions resolved (6 accepted as default, 1 refined with name-mapping UI, 1 refined with rate-limit + revocation), 0 critical gaps |
 | Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | — |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | clean (PLAN) | 17 issues surfaced + resolved, 2 critical gaps flagged (share-link + spec-chat rate limit), addressed via in-scope TODO |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | clean | score: 3/10 → 9/10, 18 decisions added, 9 mockups generated + 2 iterated to v2, DESIGN.md written |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-**UNRESOLVED:** 8 (all from CEO review, all Section 11 strategy defaults — eng review resolved 17/17)
+**UNRESOLVED:** 0 (all 8 Section 11 defaults walked and confirmed 2026-04-17)
 
 **SCOPE EXPANSIONS FROM ENG REVIEW:** User pulled 4 items into v1 during TODO triage:
 
@@ -390,4 +390,4 @@ Both pile on top of the eng review's 4 in-scope additions (OAuth, PII redaction,
 
 **APPROVED MOCKUPS:** see Section 15
 
-**VERDICT:** ENG + DESIGN CLEARED — ready to implement once CEO Section 11 defaults are accepted (or re-decided). CEO review left 8 strategy defaults unresolved; confirm or adjust them before implementation. Remaining screens (Evidence library, What to build, Spec editor, Outcomes) should get a follow-up /plan-design-review pass before wk 2 build.
+**VERDICT:** ENG + DESIGN + CEO CLEARED. All Section 11 decisions resolved 2026-04-17. Ready to implement. Remaining screens (Evidence library, What to build, Spec editor, Outcomes) should get a follow-up /plan-design-review pass before wk 2 build.
