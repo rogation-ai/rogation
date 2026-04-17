@@ -92,6 +92,25 @@ Test expectations for every new feature commit:
 - When adding an error handler, write a test that triggers the error.
 - Never commit code that makes existing tests fail.
 
+## LLM router
+
+Every LLM call goes through `lib/llm/router.ts`. Never import `@anthropic-ai/sdk` or `openai` anywhere else.
+
+- **Task → model mapping.** `synthesis` → Sonnet 4.6 (long-context, deep reasoning). `generation` / `refinement` / `scoring` → Haiku 4.5 (fast + cheap). Swap a tier by editing `TASK_MODELS` in `router.ts`; every call site picks up the new model automatically.
+- **Typed prompts.** Every prompt is a `Prompt<Input, Output>` built with `definePrompt()` from `lib/llm/prompts.ts`. Each prompt file exports one prompt. The template's `name + task + system` are sha256-hashed at load, and the hash lands on every row the prompt produces (`insight_cluster.prompt_hash`, `opportunity.prompt_hash`, `spec.prompt_hash`, etc.). Editing a template's system changes the hash automatically — no "forgot to bump the version" bugs.
+- **Prompt caching.** Pass `{ cache: true }` to `complete()` and the router adds `cache_control: { type: "ephemeral" }` to the system message + the pre-boundary slice of the user message. Call sites control the boundary via the `cacheBoundary` field their `build()` returns. Expect ~10x cost reduction on re-reads of a stable evidence corpus.
+- **Retries.** Transient failures (429 + 5xx + network) retry up to 3 times with jittered exponential backoff (500ms, 1500ms, 4500ms). 4xx other than 429 fail immediately — those are the caller's bug.
+- **Budget hook.** `opts.onUsage` is called with `{ promptHash, tokensIn, tokensOut, cacheReadTokens, latencyMs, ... }` AFTER the provider call and BEFORE parsing the output. Throw from the hook to abort the request (plan-limits middleware wires this in the next commit).
+- **Trace hook.** `opts.onTrace` is called after success or failure with the full `{input, output, error, latencyMs}` payload. Fire-and-forget — hook errors are caught + logged, never break the caller (Sentry + eval-infra wiring lands in the observability commit).
+- **Embeddings.** `embed(text)` uses OpenAI `text-embedding-3-small` (1536-d, matches the `evidence_embedding.vector` column).
+
+Adding a new prompt:
+
+1. Create `lib/llm/prompts/<domain>-<what>.ts` with one `definePrompt()` call.
+2. Write the `system` as the stable instruction, the `build()` as input-dependent assembly, and the `parse()` as typed output extraction (throw on schema mismatch).
+3. Import it at the call site. Pass the prompt + input to `complete()`.
+4. The hash changes on every edit to the template. Running the eval suite against the new hash is the quality gate.
+
 ## Tenant isolation
 
 Every data row belongs to an account. Three layers enforce this:

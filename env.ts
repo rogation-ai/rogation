@@ -31,6 +31,18 @@ export const env = createEnv({
       .describe(
         "Webhook signing secret from Clerk dashboard. Required for webhook signature verification.",
       ),
+
+    ANTHROPIC_API_KEY: z
+      .string()
+      .min(1)
+      .describe(
+        "Anthropic API key. Used for synthesis (Sonnet 4.6) and generation (Haiku 4.5).",
+      ),
+
+    OPENAI_API_KEY: z
+      .string()
+      .min(1)
+      .describe("OpenAI API key. Used for evidence embeddings (text-embedding-3-small)."),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -44,6 +56,8 @@ export const env = createEnv({
     DATABASE_URL: process.env.DATABASE_URL,
     CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
     CLERK_WEBHOOK_SIGNING_SECRET: process.env.CLERK_WEBHOOK_SIGNING_SECRET,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
