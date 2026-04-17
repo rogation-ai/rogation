@@ -1,7 +1,15 @@
 import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
 export default defineConfig({
+  /*
+    @vitejs/plugin-react handles the automatic JSX transform so Vitest
+    can parse .tsx files. Next.js keeps tsconfig.json's jsx set to
+    "preserve" for its own compiler; the test pipeline is a separate
+    world and needs this override.
+  */
+  plugins: [react()],
   resolve: {
     alias: {
       "@": resolve(__dirname, "."),

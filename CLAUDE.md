@@ -92,6 +92,26 @@ Test expectations for every new feature commit:
 - When adding an error handler, write a test that triggers the error.
 - Never commit code that makes existing tests fail.
 
+## Shared UI (Storybook)
+
+Shared primitives from DESIGN.md §6 live under `components/ui/` with a `.stories.tsx` next to each. Storybook (v10) is the source of truth for every component variant — never eyeball a pill, a badge, or a meter in the running app alone.
+
+- **Run.** `bun run storybook` (dev, port 6006). `bun run build-storybook` (static export for preview hosting).
+- **Config.** `.storybook/main.ts` + `.storybook/preview.tsx`. Preview imports `app/globals.css` so every story renders against real design tokens. Backgrounds addon flips between marketing cream + app white + dark palettes.
+- **Addons.** `@storybook/addon-docs` (auto prop tables), `@storybook/addon-a11y` (live axe-core check on every story; enforces DESIGN.md §9 WCAG 2.2 AA baseline).
+- **Rule.** Any component referenced by more than one feature commit goes in `components/ui/`. One-off feature components live in `app/(app)/<feature>/components/`.
+- **Pure logic colocated.** Threshold math (e.g. `PlanMeter.bandFor(pct)`, `ConfidenceBadge.bandForConfidence(score)`) is exported from the component file and unit-tested in `test/ui-primitives.test.ts`. Visual regression is a follow-up (Storybook's test-runner or Chromatic).
+
+**Shipped primitives (5/15 from DESIGN.md §6):**
+
+- `PlanMeter` — inline "7/10" with colour bands + Upgrade CTA at cap.
+- `SeverityPill` — low/medium/high/critical with optional count.
+- `ConfidenceBadge` — 0-1 score → Low/Medium/High band.
+- `EmptyState` — headline + context + primary/secondary actions (design review rule: empty states are features).
+- `LoadingSkeleton` — line / heading / card / list variants. Never use a spinner on a list.
+
+Remaining from the design system: `CitationChip`, `FrequencyBar`, `SourceIcon`, `SegmentTag`, `ReadinessGrade`, `StreamingCursor`, `StaleBanner`, `ThinCorpusNudge`, `NumberedStepper`, `IntegrationLogoButton`. Lands incrementally alongside the feature commits that consume them.
+
 ## Rate limiting
 
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.

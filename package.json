@@ -16,7 +16,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "check": "bun run typecheck && bun run lint && bun run build && bun run test"
+    "check": "bun run typecheck && bun run lint && bun run build && bun run test",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
@@ -45,14 +47,21 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "^10.3.5",
+    "@storybook/addon-docs": "^10.3.5",
+    "@storybook/addon-onboarding": "^10.3.5",
+    "@storybook/nextjs": "^10.3.5",
+    "@storybook/react": "^10.3.5",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
     "@vitest/ui": "^4.1.4",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
     "eslint-config-next": "15.1.0",
+    "storybook": "^10.3.5",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
