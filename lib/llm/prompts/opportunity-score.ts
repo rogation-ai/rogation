@@ -107,7 +107,10 @@ Output a single JSON object of the exact shape:
 }
 
 Rules:
-- clusterLabels must be a non-empty subset of the input cluster labels.
+- clusterLabels MUST contain the exact label= attribute strings from
+  the input <cluster label="..."> tags (e.g., "C1", "C2"). NEVER use
+  cluster titles, descriptions, or any text inside the tag.
+- Non-empty: every opportunity references at least one cluster label.
 - Output ONLY the JSON. No markdown fences, no prose.
 - Order doesn't matter; ranking is computed server-side.`;
 
@@ -125,7 +128,7 @@ export const opportunityScore = definePrompt<
           .slice(0, 3)
           .map((q) => `<quote><![CDATA[${q}]]></quote>`)
           .join("\n");
-        return `<cluster id="${escapeXml(c.label)}" severity="${c.severity}" frequency="${c.frequency}">
+        return `<cluster label="${escapeXml(c.label)}" severity="${c.severity}" frequency="${c.frequency}">
   <title><![CDATA[${c.title}]]></title>
   <description><![CDATA[${c.description}]]></description>
   ${quoteBlock}

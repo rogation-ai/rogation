@@ -96,6 +96,13 @@ export async function runFullOpportunities(
     label: `C${i + 1}`,
   }));
   const labelToClusterId = new Map(labeled.map((c) => [c.label, c.id]));
+  // Title fallback: Sonnet occasionally echoes the cluster title
+  // instead of the C1/C2/... label despite the prompt's instruction
+  // (seen in /qa on 2026-04-18). Accept titles as a secondary match
+  // so a single stray answer doesn't crash the whole run.
+  const titleToClusterId = new Map(
+    labeled.map((c) => [c.title.toLowerCase().trim(), c.id]),
+  );
 
   // Pull a few representative quotes per cluster to give the LLM
   // enough signal to estimate impact dimensions. This is best-effort;
@@ -125,14 +132,17 @@ export async function runFullOpportunities(
   );
 
   // Validate cluster labels and map back to real ids BEFORE any write.
+  // Rewrite title-matches back to their canonical C1/C2 label so the
+  // downstream persist path can use a single lookup map.
   for (const opp of output.opportunities) {
-    for (const label of opp.clusterLabels) {
-      if (!labelToClusterId.has(label)) {
-        throw new Error(
-          `opportunity-score returned unknown cluster label "${label}"`,
-        );
-      }
-    }
+    opp.clusterLabels = opp.clusterLabels.map((label) => {
+      if (labelToClusterId.has(label)) return label;
+      const canonical = resolveByTitle(label, labeled, titleToClusterId);
+      if (canonical) return canonical;
+      throw new Error(
+        `opportunity-score returned unknown cluster label "${label}"`,
+      );
+    });
   }
 
   const created = await persistOpportunities(
@@ -147,6 +157,24 @@ export async function runFullOpportunities(
     clustersUsed: labeled.length,
     promptHash: opportunityScore.hash,
   };
+}
+
+/**
+ * Try to recover a canonical C1/C2/... label when the LLM echoed a
+ * cluster title instead. Case-insensitive exact match on title; if
+ * nothing matches, returns null and the caller throws. Exported
+ * for unit testing.
+ */
+export function resolveByTitle(
+  candidate: string,
+  labeled: Array<{ label: string; title: string; id: string }>,
+  titleToClusterId: Map<string, string>,
+): string | null {
+  const key = candidate.toLowerCase().trim();
+  const clusterId = titleToClusterId.get(key);
+  if (!clusterId) return null;
+  const match = labeled.find((c) => c.id === clusterId);
+  return match?.label ?? null;
 }
 
 async function persistOpportunities(
