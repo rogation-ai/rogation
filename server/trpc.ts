@@ -1,11 +1,18 @@
 import { initTRPC, TRPCError } from "@trpc/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db } from "@/db/client";
 import { bindAccountToTx, type Tx } from "@/db/scoped";
 import { accounts, users } from "@/db/schema";
+import { provisionAccountForClerkUser } from "@/lib/account/provision";
+import { EVENTS } from "@/lib/analytics/events";
+import {
+  captureServer,
+  flushServer,
+  identifyServer,
+} from "@/lib/analytics/posthog-server";
 import {
   assertResourceLimit,
   type CountableResource,
@@ -95,18 +102,59 @@ export async function createContext(): Promise<Context> {
     .where(eq(users.clerkUserId, clerkUserId))
     .limit(1);
 
-  // Signed-in via Clerk but no DB user yet. Usually means the webhook
-  // hasn't delivered — rare but possible on the first request after
-  // signup. Return as unauthenticated for now; the client can retry.
-  if (!row) {
+  if (row) {
+    return {
+      clerkUserId,
+      userId: row.userId,
+      accountId: row.accountId,
+      plan: row.plan,
+      db,
+    };
+  }
+
+  // Lazy auto-provision: Clerk session is valid, but no DB row yet.
+  // In dev, the Clerk webhook can't reach localhost without a tunnel,
+  // so the webhook path never runs. In prod, there's a ~2s race
+  // between the post-signup redirect and the webhook delivery. Either
+  // way: provision now, so the user's first tRPC request succeeds
+  // instead of bouncing off "Account is being provisioned" retries.
+  // The webhook stays idempotent defense-in-depth in case of an OAuth
+  // flow that lands on a non-tRPC surface first.
+  const user = await currentUser().catch(() => null);
+  const email =
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses?.[0]?.emailAddress;
+
+  if (!email) {
+    // Can't provision without an email. Fall back to unauthenticated;
+    // the authed middleware will throw a nicer error to the client.
     return { clerkUserId, userId: null, accountId: null, plan: null, db };
+  }
+
+  const provisioned = await provisionAccountForClerkUser({
+    clerkUserId,
+    email,
+  });
+
+  // Fire the activation funnel event exactly once. If the webhook
+  // races ahead of this path, its `created: true` fires it; this
+  // path fires it when WE won the race. Either way, captured once.
+  if (provisioned.created) {
+    identifyServer(clerkUserId, { email, plan: provisioned.plan });
+    captureServer(clerkUserId, EVENTS.SIGNUP_COMPLETED, {
+      plan: provisioned.plan,
+    });
+    // Fire-and-forget flush; don't block the first page render.
+    flushServer().catch(() => {
+      /* best effort */
+    });
   }
 
   return {
     clerkUserId,
-    userId: row.userId,
-    accountId: row.accountId,
-    plan: row.plan,
+    userId: provisioned.userId,
+    accountId: provisioned.accountId,
+    plan: provisioned.plan,
     db,
   };
 }

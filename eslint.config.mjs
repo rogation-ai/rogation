@@ -16,6 +16,10 @@ const eslintConfig = [
         - db/**                       (the module itself)
         - server/trpc.ts              (context wiring)
         - app/api/webhooks/**         (signed-payload handlers w/ no session)
+        - lib/account/**              (account provisioning runs BEFORE
+                                       an account exists; no account_id
+                                       to bind to, so no scoped tx
+                                       makes sense here)
         - scripts/** (future)         (cli tools running as operators)
 
         Every other caller must go through ctx.db in a tRPC procedure,
@@ -45,6 +49,7 @@ const eslintConfig = [
       "db/**",
       "server/trpc.ts",
       "app/api/webhooks/**",
+      "lib/account/**",
       "scripts/**",
     ],
     rules: {

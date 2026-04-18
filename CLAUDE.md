@@ -55,7 +55,7 @@ All env reads go through `env.ts` (typed via `@t3-oss/env-nextjs` + zod). Never 
 ## Auth + API
 
 - Auth: Clerk. `middleware.ts` at repo root runs Clerk on every non-static request. Public routes: `/`, `/pricing`, `/docs/*`, `/s/*` (share links), `/api/webhooks/*`, `/sign-in*`, `/sign-up*`. Everything else requires a session.
-- Clerk webhook: `app/api/webhooks/clerk/route.ts` handles `user.created` by creating an `account` + `user` row in one transaction. Idempotent on redelivery (de-duped via `clerkUserId` unique index). Stripe customer creation is lazy on first upgrade, not here.
+- Account provisioning: `lib/account/provision.ts > provisionAccountForClerkUser()` is the single source of truth. Canonical path is `server/trpc.ts > createContext` — when a request arrives with a Clerk session but no DB row, it calls the helper synchronously before the first page renders. The Clerk webhook (`app/api/webhooks/clerk/route.ts`) stays as idempotent defense-in-depth for OAuth flows that skip the tRPC surface. Webhooks are eventually-consistent and can't reach localhost without a tunnel — owning the critical path in `createContext` eliminates that friction forever. `SIGNUP_COMPLETED` fires exactly once, from whichever path wins the race (checked via `created: true` on the helper's return). Stripe customer creation is lazy on first upgrade, not here.
 - API layer: tRPC on Next.js App Router at `app/api/trpc/[trpc]/route.ts`.
   - Context: `server/trpc.ts` — pulls the Clerk session, resolves `{ userId, accountId }` from our DB in one query, exposes `ctx.db`.
   - `publicProcedure`: no auth, used for landing page and share link reads.
