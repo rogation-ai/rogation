@@ -100,3 +100,14 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* StreamingCursor blink. Tied to a named class so we don't animate
+   other inline-blocks; reduced-motion freezes the cursor solid via
+   the global rule above. */
+@keyframes rogation-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.25; }
+}
+.rogation-streaming-cursor {
+  animation: rogation-cursor-blink 900ms steps(1, end) infinite;
+}

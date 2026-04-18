@@ -7,7 +7,7 @@ import {
   opportunityToCluster,
   specs,
 } from "@/db/schema";
-import { complete, type CompleteOpts } from "@/lib/llm/router";
+import { complete, completeStream, type CompleteOpts } from "@/lib/llm/router";
 import { specGenerate } from "@/lib/llm/prompts/spec-generate";
 import { gradeSpec, type ReadinessChecklist } from "@/lib/spec/readiness";
 import { renderSpecMarkdown } from "@/lib/spec/renderers/markdown";
@@ -184,6 +184,170 @@ export async function generateSpec(
     ir: output.spec,
     markdown,
     promptHash: specGenerate.hash,
+  };
+}
+
+/* ------------------------------ streaming ------------------------------ */
+
+/**
+ * Streaming variant of generateSpec. Yields raw text deltas as the LLM
+ * emits them, and on completion parses + grades + renders + persists in
+ * the caller's transaction (same as the blocking path).
+ *
+ * Use this from a Route Handler that can hold the tx + stream SSE to
+ * the browser. The browser shows raw text with a blinking cursor and
+ * refetches the rendered spec via tRPC once a `done` event arrives.
+ *
+ * Validation + persistence are identical to generateSpec — both paths
+ * share the grading + markdown cache. A client that uses streaming
+ * should never see a spec the blocking path wouldn't accept.
+ */
+export async function* generateSpecStream(
+  ctx: SpecCtx,
+  opportunityId: string,
+  opts: CompleteOpts = {},
+): AsyncGenerator<
+  | { type: "delta"; text: string }
+  | {
+      type: "done";
+      specId: string;
+      version: number;
+      grade: "A" | "B" | "C" | "D";
+    },
+  void,
+  unknown
+> {
+  const [opp] = await ctx.db
+    .select({
+      id: opportunitiesTbl.id,
+      title: opportunitiesTbl.title,
+      description: opportunitiesTbl.description,
+      reasoning: opportunitiesTbl.reasoning,
+      impactEstimate: opportunitiesTbl.impactEstimate,
+      effortEstimate: opportunitiesTbl.effortEstimate,
+    })
+    .from(opportunitiesTbl)
+    .where(
+      and(
+        eq(opportunitiesTbl.id, opportunityId),
+        eq(opportunitiesTbl.accountId, ctx.accountId),
+      ),
+    )
+    .limit(1);
+
+  if (!opp) {
+    throw new Error(
+      `Opportunity ${opportunityId} not found (or belongs to another account)`,
+    );
+  }
+
+  const clusterLinks = await ctx.db
+    .select({ clusterId: opportunityToCluster.clusterId })
+    .from(opportunityToCluster)
+    .where(eq(opportunityToCluster.opportunityId, opportunityId));
+
+  const clusterIds = clusterLinks.map((l) => l.clusterId);
+  if (clusterIds.length === 0) {
+    throw new Error(
+      "Opportunity has no linked clusters — can't generate a spec without evidence",
+    );
+  }
+  if (clusterIds.length > MAX_CLUSTERS_PER_SPEC) {
+    clusterIds.length = MAX_CLUSTERS_PER_SPEC;
+  }
+
+  const clusterRows = await ctx.db
+    .select({
+      id: insightClusters.id,
+      title: insightClusters.title,
+      description: insightClusters.description,
+      severity: insightClusters.severity,
+      frequency: insightClusters.frequency,
+    })
+    .from(insightClusters)
+    .where(inArray(insightClusters.id, clusterIds));
+
+  const quotes = await sampleQuotes(ctx, clusterIds, QUOTES_PER_CLUSTER);
+  const realClusterIds = new Set(clusterRows.map((c) => c.id));
+
+  const stream = completeStream(
+    specGenerate,
+    {
+      opportunity: {
+        title: opp.title,
+        description: opp.description,
+        reasoning: opp.reasoning,
+        effort: opp.effortEstimate,
+        impact: opp.impactEstimate ?? {},
+      },
+      clusters: clusterRows.map((c, i) => ({
+        id: c.id,
+        label: `C${i + 1}`,
+        title: c.title,
+        description: c.description,
+        severity: c.severity,
+        frequency: c.frequency,
+        quotes: quotes.get(c.id) ?? [],
+      })),
+    },
+    { cache: true, ...opts },
+  );
+
+  let finalOutput: Awaited<ReturnType<typeof specGenerate.parse>> | null = null;
+  for await (const ev of stream) {
+    if (ev.type === "delta") {
+      yield { type: "delta", text: ev.text };
+    } else {
+      finalOutput = ev.output;
+    }
+  }
+
+  if (!finalOutput) {
+    throw new Error("specGenerateStream: upstream closed without a result");
+  }
+
+  for (const c of finalOutput.spec.citations) {
+    if (!realClusterIds.has(c.clusterId)) {
+      throw new Error(
+        `spec-generate returned unknown clusterId "${c.clusterId}" in citations`,
+      );
+    }
+  }
+
+  const { grade, checklist } = gradeSpec(finalOutput.spec);
+  const markdown = renderSpecMarkdown(finalOutput.spec);
+
+  const [existing] = await ctx.db
+    .select({ version: specs.version })
+    .from(specs)
+    .where(eq(specs.opportunityId, opportunityId))
+    .orderBy(desc(specs.version))
+    .limit(1);
+  const nextVersion = (existing?.version ?? 0) + 1;
+
+  const [inserted] = await ctx.db
+    .insert(specs)
+    .values({
+      opportunityId,
+      accountId: ctx.accountId,
+      version: nextVersion,
+      contentIr: finalOutput.spec,
+      contentMd: markdown,
+      readinessGrade: grade,
+      readinessChecklist: checklist,
+      promptHash: specGenerate.hash,
+    })
+    .returning({ id: specs.id });
+
+  if (!inserted) {
+    throw new Error("spec insert returned no row");
+  }
+
+  yield {
+    type: "done",
+    specId: inserted.id,
+    version: nextVersion,
+    grade,
   };
 }
 

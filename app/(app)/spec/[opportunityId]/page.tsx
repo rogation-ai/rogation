@@ -1,29 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
+import { StreamingCursor } from "@/components/ui/StreamingCursor";
 import { capture } from "@/lib/analytics/posthog-client";
 import { EVENTS } from "@/lib/analytics/events";
+import { sseFetch } from "@/lib/client/sse-fetch";
 import type { SpecIR } from "@/lib/spec/ir";
 
 /*
-  Spec editor — blocking generate + readiness grade + Markdown export.
+  Spec editor — streaming generate + readiness grade + Markdown export.
 
-  This is the v1 editor (design review §14.2). Three phases:
-
-    1. Before generation: opportunity header, big "Generate spec"
-       CTA, empty state explaining what's about to happen.
-    2. During generation: disabled CTA with "Generating spec… ~20s".
+  Three phases:
+    1. Before generation: opportunity header + big "Generate spec" CTA.
+    2. During generation: live text stream from /api/specs/generate
+       with a blinking StreamingCursor. The server persists on its
+       own transaction; we just paint bytes.
     3. After generation: grade panel + rendered spec + "Download .md"
-       + "Regenerate" + "View on What-to-build" link.
+       + "Regenerate" + version badge.
 
-  Streaming + refinement chat land in the next two commits. The
-  editor is intentionally read-mostly today — PMs refine the
-  prompt, not the text. Chat flips that.
+  Refinement chat ships in the next commit (Commit C).
+
+  Why SSE instead of the tRPC mutation: spec generation runs 10-30s.
+  Staring at a spinner for 20s is a bad UX; streaming tokens makes
+  the wait feel like progress instead of a crash. The blocking tRPC
+  path still exists (trpc.specs.generate) — we use it as a fallback
+  when SSE fails. Both paths share the same orchestrator, readiness
+  grade, and persistence so the server-side contract is identical.
 
   FIRST_SPEC_EXPORTED fires on the first successful markdown
   download (localStorage-guarded so re-downloads don't double-count).
@@ -40,16 +47,46 @@ export default function SpecEditorPage({
 
   const utils = trpc.useUtils();
   const latest = trpc.specs.getLatest.useQuery({ opportunityId });
-  const generate = trpc.specs.generate.useMutation({
-    onSuccess: () => {
-      utils.specs.getLatest.invalidate({ opportunityId });
-    },
-  });
-
-  // We don't have a "single opportunity" query — but the list includes
-  // everything we need for the header. Ok to filter on the client.
   const opps = trpc.opportunities.list.useQuery();
   const opportunity = opps.data?.find((o) => o.id === opportunityId);
+
+  const [streamText, setStreamText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  async function startStream() {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setStreamText("");
+    setStreamError(null);
+    setIsStreaming(true);
+
+    try {
+      await sseFetch({
+        url: "/api/specs/generate",
+        body: { opportunityId },
+        signal: ac.signal,
+        onEvent: (ev) => {
+          if (ev.type === "delta") {
+            setStreamText((s) => s + ev.text);
+          } else if (ev.type === "done") {
+            // Server persisted — reload the rendered spec view.
+            utils.specs.getLatest.invalidate({ opportunityId });
+          } else if (ev.type === "error") {
+            setStreamError(ev.message);
+          }
+        },
+      });
+    } catch (err) {
+      if (!ac.signal.aborted) {
+        setStreamError(err instanceof Error ? err.message : "Stream failed");
+      }
+    } finally {
+      setIsStreaming(false);
+    }
+  }
 
   const [downloading, setDownloading] = useState(false);
 
@@ -114,25 +151,24 @@ export default function SpecEditorPage({
           {opportunity.reasoning}
         </p>
 
-        {!spec ? (
+        {isStreaming || (streamText && !spec) ? (
+          <StreamingPreview text={streamText} live={isStreaming} />
+        ) : !spec ? (
           <EmptyState
             title="No spec yet"
             description="One call turns this opportunity and its supporting evidence into a structured PRD: user stories, acceptance criteria, edge cases, QA checklist, citations back to the clusters."
             primaryAction={{
-              label: generate.isPending ? "Generating… ~20s" : "Generate spec",
-              onClick: () => generate.mutate({ opportunityId }),
+              label: "Generate spec",
+              onClick: startStream,
             }}
           />
         ) : (
           <SpecView ir={spec.ir} />
         )}
 
-        {generate.error && (
-          <p
-            className="text-sm"
-            style={{ color: "var(--color-danger)" }}
-          >
-            {generate.error.message}
+        {streamError && (
+          <p className="text-sm" style={{ color: "var(--color-danger)" }}>
+            {streamError}
           </p>
         )}
       </section>
@@ -163,15 +199,15 @@ export default function SpecEditorPage({
               </button>
               <button
                 type="button"
-                onClick={() => generate.mutate({ opportunityId })}
-                disabled={generate.isPending}
+                onClick={startStream}
+                disabled={isStreaming}
                 className="rounded-md border px-4 py-2 text-sm disabled:opacity-60"
                 style={{
                   borderColor: "var(--color-border-subtle)",
                   color: "var(--color-text-secondary)",
                 }}
               >
-                {generate.isPending ? "Generating…" : "Regenerate"}
+                {isStreaming ? "Generating…" : "Regenerate"}
               </button>
               <p
                 className="text-xs"
@@ -197,6 +233,42 @@ export default function SpecEditorPage({
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+function StreamingPreview({
+  text,
+  live,
+}: {
+  text: string;
+  live: boolean;
+}): React.JSX.Element {
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-xl border p-6"
+      style={{
+        borderColor: "var(--color-border-subtle)",
+        background: "var(--color-surface-raised)",
+      }}
+    >
+      <p
+        className="text-xs uppercase tracking-widest"
+        style={{ color: "var(--color-text-tertiary)" }}
+      >
+        Generating{live ? "…" : ""}
+      </p>
+      <pre
+        className="whitespace-pre-wrap break-words text-xs leading-relaxed"
+        style={{
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        {text}
+        {live && <StreamingCursor />}
+      </pre>
     </div>
   );
 }

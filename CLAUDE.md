@@ -189,7 +189,17 @@ Turns one opportunity + its linked clusters into a shippable product spec. One b
 - **Editor.** `app/(app)/spec/[opportunityId]/page.tsx` — opportunity header, empty state with "Generate spec" CTA, rendered spec view on success, sidebar with `ReadinessGrade`, `Download .md`, `Regenerate`, version + updatedAt. "Create spec →" button on each row of `/build`. First successful markdown download fires `FIRST_SPEC_EXPORTED` (localStorage-guarded so re-downloads don't double-count).
 - **Component.** `components/ui/ReadinessGrade.tsx` — A/B/C/D letter in a coloured circle + a 4-row checklist with ✓/· glyphs. Pure presentation: takes grade + checklist props, no data fetching.
 
-## Rate limiting
+## Spec streaming (SSE)
+
+Spec generation runs 10-30s. Streaming tokens makes the wait feel like progress instead of a spinner that might be hung.
+
+- **Router.** `completeStream(prompt, input, opts)` in `lib/llm/router.ts` wraps Anthropic's streaming API. Yields `{type:"delta", text}` per `content_block_delta` + a final `{type:"done", text, output, usage}` after `stream.finalMessage()`. parse() runs on the full accumulated body — never on a chunk — so partial JSON never throws mid-stream. No retries (mid-stream resumption isn't worth the complexity; fall back to `complete()` if you need retries).
+- **Orchestrator.** `lib/evidence/specs.ts > generateSpecStream(ctx, oppId)` is the streaming twin of `generateSpec`. Same validation (cluster UUIDs), same grading (`gradeSpec`), same markdown caching, same UPSERT-with-version persistence. Both paths produce the same row — a client that uses streaming never sees a spec the blocking path wouldn't accept.
+- **Route Handler.** `POST /api/specs/generate` opens a `ReadableStream<Uint8Array>` wrapped around `generateSpecStream`. Emits `event: delta` / `event: done` / `event: error` SSE frames. The DB transaction lives inside the streaming generator — connection drop = rollback = no half-written spec. Request-abort propagates into the Anthropic stream via a shared `AbortController`, so closing the tab stops burning tokens immediately.
+- **SSE wire format.** `lib/sse.ts > encodeServerEvent(ev)` + `parseServerEvents(buffer)` own the framing. Shared between the route handler and the browser client so there's one source of truth. Unit-tested in `test/sse.test.ts`.
+- **Browser client.** `lib/client/sse-fetch.ts > sseFetch({url, body, signal, onEvent})` — fetch+ReadableStream+TextDecoder. Handles UTF-8 decoding + partial-frame re-prepend across chunk boundaries + abort propagation. Browser `EventSource` isn't used because it only supports GET.
+- **StreamingCursor primitive.** `components/ui/StreamingCursor.tsx` (9th shared primitive). Inline or block variant. CSS `@keyframes rogation-cursor-blink` in `app/globals.css`, auto-frozen by the global `prefers-reduced-motion` rule. Purely presentational; parents render it based on stream state.
+- **Editor flow.** Click "Generate spec" → `sseFetch()` → live text accumulates in `<StreamingPreview>` with the cursor. On `done`, `utils.specs.getLatest.invalidate()` swaps the preview for the rendered `<SpecView>`. Abort cancels the stream AND the LLM call upstream.
 
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.
 

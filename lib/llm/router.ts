@@ -230,6 +230,141 @@ export async function complete<Input, Output>(
 }
 
 /**
+ * Streaming completion. Yields text deltas as they arrive. On completion,
+ * emits a final { type: "done", text, usage, output } where text is the
+ * full accumulated body, usage is the same shape as complete(), and
+ * output is the prompt's parsed result.
+ *
+ * Streaming intentionally skips retries — a mid-stream failure is easier
+ * for the caller to handle (abort, restart) than for us to resume from
+ * a provider that doesn't expose resumable streams. If you need retries,
+ * fall back to complete().
+ */
+export async function* completeStream<Input, Output>(
+  prompt: Prompt<Input, Output>,
+  input: Input,
+  opts: CompleteOpts = {},
+): AsyncGenerator<
+  | { type: "delta"; text: string }
+  | {
+      type: "done";
+      text: string;
+      output: Output;
+      usage: Usage;
+    },
+  void,
+  unknown
+> {
+  if (prompt.task === "embedding") {
+    throw new Error(
+      `Prompt ${prompt.name} has task=embedding; call embed() instead.`,
+    );
+  }
+
+  const model = TASK_MODELS[prompt.task];
+  const built = prompt.build(input);
+  const started = Date.now();
+
+  const systemBlocks = opts.cache
+    ? [
+        {
+          type: "text" as const,
+          text: prompt.system,
+          cache_control: { type: "ephemeral" as const },
+        },
+      ]
+    : prompt.system;
+
+  const userContent =
+    opts.cache && typeof built.cacheBoundary === "number"
+      ? [
+          {
+            type: "text" as const,
+            text: built.user.slice(0, built.cacheBoundary),
+            cache_control: { type: "ephemeral" as const },
+          },
+          {
+            type: "text" as const,
+            text: built.user.slice(built.cacheBoundary),
+          },
+        ]
+      : built.user;
+
+  const stream = anthropic().messages.stream(
+    {
+      model,
+      system: systemBlocks,
+      messages: [{ role: "user", content: userContent }],
+      max_tokens: 4096,
+      temperature: opts.temperature ?? DEFAULT_TEMPERATURE[prompt.task],
+    },
+    { signal: opts.signal },
+  );
+
+  let full = "";
+  try {
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        full += event.delta.text;
+        yield { type: "delta", text: event.delta.text };
+      }
+    }
+  } catch (err) {
+    if (opts.onTrace) {
+      Promise.resolve(
+        opts.onTrace({
+          promptName: prompt.name,
+          promptHash: prompt.hash,
+          model,
+          input,
+          output: null,
+          error: err,
+          latencyMs: Date.now() - started,
+        }),
+      ).catch(() => {
+        /* swallow */
+      });
+    }
+    throw err;
+  }
+
+  const finalMessage = await stream.finalMessage();
+  const usage: Usage = {
+    promptHash: prompt.hash,
+    task: prompt.task,
+    model,
+    tokensIn: finalMessage.usage.input_tokens,
+    tokensOut: finalMessage.usage.output_tokens,
+    cacheReadTokens: finalMessage.usage.cache_read_input_tokens ?? undefined,
+    cacheCreateTokens:
+      finalMessage.usage.cache_creation_input_tokens ?? undefined,
+    latencyMs: Date.now() - started,
+  };
+
+  if (opts.onUsage) await opts.onUsage(usage);
+
+  const output = prompt.parse(full);
+
+  if (opts.onTrace) {
+    Promise.resolve(
+      opts.onTrace({
+        promptName: prompt.name,
+        promptHash: prompt.hash,
+        model,
+        input,
+        output,
+        latencyMs: usage.latencyMs,
+      }),
+    ).catch((err) => console.error("[llm trace hook]", err));
+  }
+
+  yield { type: "done", text: full, output, usage };
+}
+
+/**
  * Embed one or more strings. Uses OpenAI text-embedding-3-small (1536-d,
  * matches the evidence_embedding.vector column).
  */
