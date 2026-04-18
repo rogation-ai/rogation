@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   generateSpec,
   getLatestSpec,
+  listRefinements,
   listSpecs,
 } from "@/lib/evidence/specs";
 import { authedProcedure, router } from "@/server/trpc";
@@ -71,6 +72,15 @@ export const specsRouter = router({
         filename: sanitizeFilename(spec.ir.title) + ".md",
         content: spec.markdown,
       };
+    }),
+
+  refinements: authedProcedure
+    .input(z.object({ opportunityId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      return listRefinements(
+        { db: ctx.db, accountId: ctx.accountId },
+        input.opportunityId,
+      );
     }),
 });
 

@@ -47,6 +47,10 @@ export default function SpecEditorPage({
 
   const utils = trpc.useUtils();
   const latest = trpc.specs.getLatest.useQuery({ opportunityId });
+  const refinements = trpc.specs.refinements.useQuery(
+    { opportunityId },
+    { enabled: !!latest.data },
+  );
   const opps = trpc.opportunities.list.useQuery();
   const opportunity = opps.data?.find((o) => o.id === opportunityId);
 
@@ -55,37 +59,67 @@ export default function SpecEditorPage({
   const [streamError, setStreamError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  async function startStream() {
-    abortRef.current?.abort();
+  // Chat state lives alongside the spec stream but drives a separate
+  // endpoint + preview.
+  const [chatInput, setChatInput] = useState("");
+  const [chatStreamText, setChatStreamText] = useState("");
+  const [isChatting, setIsChatting] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
+
+  async function startStream(endpoint: "generate" | "refine", extra: Record<string, unknown> = {}) {
+    const isChat = endpoint === "refine";
+    const ref = isChat ? chatAbortRef : abortRef;
+    ref.current?.abort();
     const ac = new AbortController();
-    abortRef.current = ac;
-    setStreamText("");
-    setStreamError(null);
-    setIsStreaming(true);
+    ref.current = ac;
+
+    if (isChat) {
+      setChatStreamText("");
+      setChatError(null);
+      setIsChatting(true);
+    } else {
+      setStreamText("");
+      setStreamError(null);
+      setIsStreaming(true);
+    }
 
     try {
       await sseFetch({
-        url: "/api/specs/generate",
-        body: { opportunityId },
+        url: `/api/specs/${endpoint}`,
+        body: { opportunityId, ...extra },
         signal: ac.signal,
         onEvent: (ev) => {
           if (ev.type === "delta") {
-            setStreamText((s) => s + ev.text);
+            if (isChat) setChatStreamText((s) => s + ev.text);
+            else setStreamText((s) => s + ev.text);
           } else if (ev.type === "done") {
-            // Server persisted — reload the rendered spec view.
             utils.specs.getLatest.invalidate({ opportunityId });
+            utils.specs.refinements.invalidate({ opportunityId });
+            if (isChat) setChatStreamText("");
           } else if (ev.type === "error") {
-            setStreamError(ev.message);
+            if (isChat) setChatError(ev.message);
+            else setStreamError(ev.message);
           }
         },
       });
     } catch (err) {
       if (!ac.signal.aborted) {
-        setStreamError(err instanceof Error ? err.message : "Stream failed");
+        const msg = err instanceof Error ? err.message : "Stream failed";
+        if (isChat) setChatError(msg);
+        else setStreamError(msg);
       }
     } finally {
-      setIsStreaming(false);
+      if (isChat) setIsChatting(false);
+      else setIsStreaming(false);
     }
+  }
+
+  async function sendChat() {
+    const trimmed = chatInput.trim();
+    if (!trimmed || isChatting) return;
+    setChatInput("");
+    await startStream("refine", { userMessage: trimmed });
   }
 
   const [downloading, setDownloading] = useState(false);
@@ -159,7 +193,7 @@ export default function SpecEditorPage({
             description="One call turns this opportunity and its supporting evidence into a structured PRD: user stories, acceptance criteria, edge cases, QA checklist, citations back to the clusters."
             primaryAction={{
               label: "Generate spec",
-              onClick: startStream,
+              onClick: () => startStream("generate"),
             }}
           />
         ) : (
@@ -170,6 +204,18 @@ export default function SpecEditorPage({
           <p className="text-sm" style={{ color: "var(--color-danger)" }}>
             {streamError}
           </p>
+        )}
+
+        {spec && (
+          <ChatPanel
+            history={refinements.data ?? []}
+            isChatting={isChatting}
+            streamText={chatStreamText}
+            chatError={chatError}
+            input={chatInput}
+            onInput={setChatInput}
+            onSend={sendChat}
+          />
         )}
       </section>
 
@@ -199,7 +245,7 @@ export default function SpecEditorPage({
               </button>
               <button
                 type="button"
-                onClick={startStream}
+                onClick={() => startStream("generate")}
                 disabled={isStreaming}
                 className="rounded-md border px-4 py-2 text-sm disabled:opacity-60"
                 style={{
@@ -234,6 +280,156 @@ export default function SpecEditorPage({
         )}
       </aside>
     </div>
+  );
+}
+
+function ChatPanel({
+  history,
+  isChatting,
+  streamText,
+  chatError,
+  input,
+  onInput,
+  onSend,
+}: {
+  history: Array<{ id: string; role: "user" | "assistant"; content: string }>;
+  isChatting: boolean;
+  streamText: string;
+  chatError: string | null;
+  input: string;
+  onInput: (v: string) => void;
+  onSend: () => void;
+}): React.JSX.Element {
+  const showEmpty = history.length === 0 && !isChatting && !streamText;
+
+  return (
+    <section
+      className="flex flex-col gap-3 rounded-xl border p-5"
+      style={{
+        borderColor: "var(--color-border-subtle)",
+        background: "var(--color-surface-app)",
+      }}
+    >
+      <header className="flex items-center justify-between">
+        <h2
+          className="text-xs font-medium uppercase tracking-widest"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Refine
+        </h2>
+        <span
+          className="text-xs"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Each message rewrites the spec as a new version
+        </span>
+      </header>
+
+      {showEmpty ? (
+        <p
+          className="text-sm"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Ask for tightening, rewording, adding edge cases, tighter
+          acceptance criteria, … anything the spec is missing.
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-3">
+          {history.map((m) => (
+            <li
+              key={m.id}
+              className="flex flex-col gap-1 text-sm"
+              style={{ color: "var(--color-text-primary)" }}
+            >
+              <span
+                className="text-xs uppercase tracking-widest"
+                style={{
+                  color:
+                    m.role === "user"
+                      ? "var(--color-brand-accent)"
+                      : "var(--color-text-tertiary)",
+                }}
+              >
+                {m.role === "user" ? "You" : "Assistant"}
+              </span>
+              <p
+                className="whitespace-pre-wrap"
+                style={{
+                  color:
+                    m.role === "user"
+                      ? "var(--color-text-primary)"
+                      : "var(--color-text-secondary)",
+                }}
+              >
+                {m.content}
+              </p>
+            </li>
+          ))}
+          {(isChatting || streamText) && (
+            <li className="flex flex-col gap-1 text-sm">
+              <span
+                className="text-xs uppercase tracking-widest"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                Assistant
+              </span>
+              <pre
+                className="whitespace-pre-wrap break-words text-xs leading-relaxed"
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                {streamText}
+                {isChatting && <StreamingCursor />}
+              </pre>
+            </li>
+          )}
+        </ol>
+      )}
+
+      {chatError && (
+        <p className="text-sm" style={{ color: "var(--color-danger)" }}>
+          {chatError}
+        </p>
+      )}
+
+      <div className="flex items-end gap-2">
+        <textarea
+          value={input}
+          onChange={(e) => onInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              onSend();
+            }
+          }}
+          placeholder={
+            isChatting
+              ? "Generating…"
+              : "Tighten AC for US2… add an edge case for offline mode… (⌘Enter to send)"
+          }
+          rows={2}
+          disabled={isChatting}
+          className="flex-1 resize-none rounded-md border p-2 text-sm disabled:opacity-60"
+          style={{
+            borderColor: "var(--color-border-default)",
+            background: "var(--color-surface-raised)",
+            color: "var(--color-text-primary)",
+          }}
+        />
+        <button
+          type="button"
+          onClick={onSend}
+          disabled={isChatting || !input.trim()}
+          className="rounded-md px-3 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+          style={{ background: "var(--color-brand-accent)" }}
+        >
+          {isChatting ? "…" : "Send"}
+        </button>
+      </div>
+    </section>
   );
 }
 

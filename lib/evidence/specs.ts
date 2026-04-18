@@ -1,14 +1,16 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   evidence,
   evidenceToCluster,
   insightClusters,
   opportunities as opportunitiesTbl,
   opportunityToCluster,
+  specRefinements,
   specs,
 } from "@/db/schema";
 import { complete, completeStream, type CompleteOpts } from "@/lib/llm/router";
 import { specGenerate } from "@/lib/llm/prompts/spec-generate";
+import { specRefine } from "@/lib/llm/prompts/spec-refine";
 import { gradeSpec, type ReadinessChecklist } from "@/lib/spec/readiness";
 import { renderSpecMarkdown } from "@/lib/spec/renderers/markdown";
 import type { SpecIR } from "@/lib/spec/ir";
@@ -349,6 +351,171 @@ export async function* generateSpecStream(
     version: nextVersion,
     grade,
   };
+}
+
+/* ------------------------------ refinement ------------------------------ */
+
+const MAX_REFINE_HISTORY = 20;
+
+/**
+ * Refinement stream. Takes the latest spec's IR + the prior chat
+ * history + the user's new message, calls spec-refine, persists the
+ * revised spec as version N+1, and appends user + assistant rows to
+ * spec_refinement so the history renders on reload.
+ *
+ * Rate-limited upstream via the `spec-chat` preset (caller responsibility
+ * — enforce before invoking). This orchestrator trusts its caller to
+ * have checked the limit.
+ *
+ * Each completed refine stream produces ONE new spec row. Prior
+ * versions stay in the DB for the "compare versions" UX that ships
+ * in the Linear/Notion export commit.
+ */
+export async function* refineSpecStream(
+  ctx: SpecCtx,
+  opportunityId: string,
+  userMessage: string,
+  opts: CompleteOpts = {},
+): AsyncGenerator<
+  | { type: "delta"; text: string }
+  | {
+      type: "done";
+      specId: string;
+      version: number;
+      grade: "A" | "B" | "C" | "D";
+      assistantMessage: string;
+    },
+  void,
+  unknown
+> {
+  const latest = await getLatestSpec(ctx, opportunityId);
+  if (!latest) {
+    throw new Error(
+      "Can't refine — no spec yet. Generate the first version first.",
+    );
+  }
+
+  // Pull the chat history for the latest spec. Keep it bounded — a
+  // PM iterating a lot doesn't need to re-send 100 messages to the
+  // LLM every turn; the most recent window is sufficient.
+  const historyRows = await ctx.db
+    .select({
+      role: specRefinements.role,
+      content: specRefinements.content,
+    })
+    .from(specRefinements)
+    .where(eq(specRefinements.specId, latest.id))
+    .orderBy(asc(specRefinements.createdAt))
+    .limit(MAX_REFINE_HISTORY);
+
+  const stream = completeStream(
+    specRefine,
+    {
+      currentSpec: latest.ir,
+      history: historyRows,
+      userMessage,
+    },
+    { cache: true, ...opts },
+  );
+
+  let finalOutput: Awaited<ReturnType<typeof specRefine.parse>> | null = null;
+  for await (const ev of stream) {
+    if (ev.type === "delta") {
+      yield { type: "delta", text: ev.text };
+    } else {
+      finalOutput = ev.output;
+    }
+  }
+
+  if (!finalOutput) {
+    throw new Error("refineSpecStream: upstream closed without a result");
+  }
+
+  // Citations in a refinement reuse cluster UUIDs from the original
+  // spec's set. We don't validate against the cluster table here —
+  // the refine prompt is told to preserve citations unless evidence
+  // was explicitly dropped, and the citation is advisory at the UI
+  // layer. Cross-account leak is impossible anyway since the LLM
+  // only sees the prior spec's citations.
+
+  const { grade, checklist } = gradeSpec(finalOutput.spec);
+  const markdown = renderSpecMarkdown(finalOutput.spec);
+  const nextVersion = latest.version + 1;
+
+  const [newSpec] = await ctx.db
+    .insert(specs)
+    .values({
+      opportunityId,
+      accountId: ctx.accountId,
+      version: nextVersion,
+      contentIr: finalOutput.spec,
+      contentMd: markdown,
+      readinessGrade: grade,
+      readinessChecklist: checklist,
+      promptHash: specRefine.hash,
+    })
+    .returning({ id: specs.id });
+
+  if (!newSpec) {
+    throw new Error("refined spec insert returned no row");
+  }
+
+  // Append the assistant's turn to the NEW spec row so the next
+  // refinement sees the full conversation chained off the current
+  // version. Attaching to the new spec (not the old) means the
+  // "chat belongs to the latest" invariant stays simple to query.
+  await ctx.db.insert(specRefinements).values([
+    {
+      specId: newSpec.id,
+      role: "user",
+      content: userMessage,
+    },
+    {
+      specId: newSpec.id,
+      role: "assistant",
+      content: finalOutput.assistantMessage,
+      promptHash: specRefine.hash,
+    },
+  ]);
+
+  yield {
+    type: "done",
+    specId: newSpec.id,
+    version: nextVersion,
+    grade,
+    assistantMessage: finalOutput.assistantMessage,
+  };
+}
+
+export interface RefinementRow {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: Date;
+}
+
+/**
+ * Chat history for the latest spec of an opportunity. Used by the
+ * editor's chat panel on page load + after each refinement stream
+ * completes.
+ */
+export async function listRefinements(
+  ctx: SpecCtx,
+  opportunityId: string,
+): Promise<RefinementRow[]> {
+  const latest = await getLatestSpec(ctx, opportunityId);
+  if (!latest) return [];
+
+  return ctx.db
+    .select({
+      id: specRefinements.id,
+      role: specRefinements.role,
+      content: specRefinements.content,
+      createdAt: specRefinements.createdAt,
+    })
+    .from(specRefinements)
+    .where(eq(specRefinements.specId, latest.id))
+    .orderBy(asc(specRefinements.createdAt));
 }
 
 /* ----------------------------- read helpers ----------------------------- */
