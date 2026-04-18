@@ -102,15 +102,22 @@ Shared primitives from DESIGN.md §6 live under `components/ui/` with a `.storie
 - **Rule.** Any component referenced by more than one feature commit goes in `components/ui/`. One-off feature components live in `app/(app)/<feature>/components/`.
 - **Pure logic colocated.** Threshold math (e.g. `PlanMeter.bandFor(pct)`, `ConfidenceBadge.bandForConfidence(score)`) is exported from the component file and unit-tested in `test/ui-primitives.test.ts`. Visual regression is a follow-up (Storybook's test-runner or Chromatic).
 
-**Shipped primitives (5/15 from DESIGN.md §6):**
+**Shipped primitives (12/15 from DESIGN.md §6):**
 
 - `PlanMeter` — inline "7/10" with colour bands + Upgrade CTA at cap.
 - `SeverityPill` — low/medium/high/critical with optional count.
 - `ConfidenceBadge` — 0-1 score → Low/Medium/High band.
-- `EmptyState` — headline + context + primary/secondary actions (design review rule: empty states are features).
+- `EmptyState` — headline + context + primary/secondary actions.
 - `LoadingSkeleton` — line / heading / card / list variants. Never use a spinner on a list.
+- `NumberedStepper` — upload → cluster → insight progress strip on /app.
+- `StaleBanner` — warn on cluster staleness or thin corpus.
+- `ReadinessGrade` — A/B/C/D stoplight on every spec with the 4-check breakdown.
+- `StreamingCursor` — blinking caret on streamed LLM output; reduced-motion safe.
+- `FeedbackThumbs` — up/down toggle with aria-pressed; parent owns state.
+- `CitationChip` — severity dot + truncated cluster title + deep-link to `/insights?cluster=<id>`. Renders `"Cluster unavailable"` fallback when the target got refined away.
+- `FrequencyBar` — value/max horizontal bar. `percentFor(value, max)` is the pure helper; unit-tested for div-by-zero + clamp.
 
-Remaining from the design system: `CitationChip`, `FrequencyBar`, `SourceIcon`, `SegmentTag`, `ReadinessGrade`, `StreamingCursor`, `StaleBanner`, `ThinCorpusNudge`, `NumberedStepper`, `IntegrationLogoButton`. Lands incrementally alongside the feature commits that consume them.
+Remaining: `SourceIcon`, `SegmentTag`, `IntegrationLogoButton`. Ship alongside the commits that consume them (source icons land with PDF/VTT/CSV parsers; segment tag with segment-filter UX; integration logo with Linear/Notion OAuth).
 
 ## Evidence ingestion
 

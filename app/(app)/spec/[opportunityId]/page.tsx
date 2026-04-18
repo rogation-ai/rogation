@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
+import { CitationChip } from "@/components/ui/CitationChip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
@@ -59,6 +60,22 @@ export default function SpecEditorPage({
   const specFeedback = useFeedbackThumbs(
     "spec",
     latest.data ? [latest.data.id] : [],
+  );
+
+  // Resolve citation cluster UUIDs to titles so CitationChip can
+  // render names instead of opaque UUIDs. RLS scopes the lookup;
+  // clusters that have been deleted or refined away return nothing,
+  // and CitationChip renders the "unresolved" fallback.
+  const citationIds = latest.data?.ir.citations.map((c) => c.clusterId) ?? [];
+  const resolvedClusters = trpc.insights.byIds.useQuery(
+    { clusterIds: citationIds },
+    { enabled: citationIds.length > 0 },
+  );
+  const clusterLookup = new Map(
+    (resolvedClusters.data ?? []).map((c) => [
+      c.id,
+      { title: c.title, severity: c.severity },
+    ]),
   );
 
   const [streamText, setStreamText] = useState("");
@@ -204,7 +221,7 @@ export default function SpecEditorPage({
             }}
           />
         ) : (
-          <SpecView ir={spec.ir} />
+          <SpecView ir={spec.ir} clusterLookup={clusterLookup} />
         )}
 
         {streamError && (
@@ -491,7 +508,16 @@ function StreamingPreview({
   );
 }
 
-function SpecView({ ir }: { ir: SpecIR }): React.JSX.Element {
+function SpecView({
+  ir,
+  clusterLookup,
+}: {
+  ir: SpecIR;
+  clusterLookup: Map<
+    string,
+    { title: string; severity: "low" | "medium" | "high" | "critical" }
+  >;
+}): React.JSX.Element {
   // Group criteria by story so the render matches the markdown layout.
   const criteriaByStory = new Map<string, typeof ir.acceptanceCriteria>();
   for (const ac of ir.acceptanceCriteria) {
@@ -647,21 +673,25 @@ function SpecView({ ir }: { ir: SpecIR }): React.JSX.Element {
 
       {ir.citations.length > 0 && (
         <Section title="Citations">
-          <ul className="flex flex-col gap-1 text-xs">
-            {ir.citations.map((c, i) => (
-              <li
-                key={i}
-                style={{ color: "var(--color-text-tertiary)" }}
-              >
-                <code
-                  className="rounded px-1"
-                  style={{ background: "var(--color-surface-app)" }}
+          <ul className="flex flex-col gap-2 text-xs">
+            {ir.citations.map((c, i) => {
+              const resolved = clusterLookup.get(c.clusterId);
+              return (
+                <li
+                  key={i}
+                  className="flex items-start gap-2"
+                  style={{ color: "var(--color-text-secondary)" }}
                 >
-                  {c.clusterId.slice(0, 8)}
-                </code>{" "}
-                {c.note}
-              </li>
-            ))}
+                  <CitationChip
+                    clusterId={c.clusterId}
+                    title={resolved?.title ?? null}
+                    severity={resolved?.severity}
+                    note={c.note}
+                  />
+                  <span>{c.note}</span>
+                </li>
+              );
+            })}
           </ul>
         </Section>
       )}

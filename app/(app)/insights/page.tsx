@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { SeverityPill } from "@/components/ui/SeverityPill";
 import { StaleBanner } from "@/components/ui/StaleBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
+import { FrequencyBar } from "@/components/ui/FrequencyBar";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
 import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 
@@ -26,6 +28,18 @@ import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 const THIN_CORPUS_THRESHOLD = 10;
 
 export default function InsightsPage(): React.JSX.Element {
+  // useSearchParams inside the body requires a Suspense boundary at
+  // build-time static-prerender. Wrapping the whole page is the
+  // smallest safe change; the inner component hydrates on the
+  // client where searchParams actually resolves.
+  return (
+    <Suspense fallback={<SkeletonList count={5} />}>
+      <InsightsPageInner />
+    </Suspense>
+  );
+}
+
+function InsightsPageInner(): React.JSX.Element {
   const evCount = trpc.evidence.count.useQuery();
   const list = trpc.insights.list.useQuery();
   const utils = trpc.useUtils();
@@ -37,6 +51,15 @@ export default function InsightsPage(): React.JSX.Element {
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+
+  // Deep-link: /insights?cluster=<id> pre-selects that cluster on
+  // first render. CitationChip on the spec editor links here so a
+  // PM reading a spec can jump straight to the evidence quotes.
+  useEffect(() => {
+    const deep = searchParams.get("cluster");
+    if (deep && selectedId === null) setSelectedId(deep);
+  }, [searchParams, selectedId]);
 
   const detail = trpc.insights.detail.useQuery(
     { clusterId: selectedId ?? "" },
@@ -45,6 +68,11 @@ export default function InsightsPage(): React.JSX.Element {
 
   const clusterIds = (list.data ?? []).map((c) => c.id);
   const feedback = useFeedbackThumbs("insight_cluster", clusterIds);
+
+  const maxFrequency = Math.max(
+    1,
+    ...(list.data ?? []).map((c) => c.frequency),
+  );
 
   const count = evCount.data?.count ?? 0;
   const clusters = list.data ?? [];
@@ -129,6 +157,11 @@ export default function InsightsPage(): React.JSX.Element {
             <span className="flex items-center gap-2 text-xs">
               <SeverityPill severity={c.severity} count={c.frequency} />
             </span>
+            <FrequencyBar
+              value={c.frequency}
+              max={maxFrequency}
+              ariaLabel={`${c.frequency} of ${maxFrequency} pieces of evidence`}
+            />
           </button>
         ))}
 

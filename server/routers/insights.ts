@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
+import { inArray } from "drizzle-orm";
 import { z } from "zod";
+import { insightClusters } from "@/db/schema";
 import {
   getClusterDetail,
   listClusters,
@@ -36,6 +38,23 @@ export const insightsRouter = router({
         });
       }
       return detail;
+    }),
+
+  byIds: authedProcedure
+    .input(z.object({ clusterIds: z.array(z.string().uuid()).max(100) }))
+    .query(async ({ ctx, input }) => {
+      if (input.clusterIds.length === 0) return [];
+      // RLS scopes this to the current account; cross-account ids
+      // return zero rows. Minimal shape — enough for CitationChip.
+      return ctx.db
+        .select({
+          id: insightClusters.id,
+          title: insightClusters.title,
+          severity: insightClusters.severity,
+          frequency: insightClusters.frequency,
+        })
+        .from(insightClusters)
+        .where(inArray(insightClusters.id, input.clusterIds));
     }),
 
   run: authedProcedure.mutation(async ({ ctx }) => {
