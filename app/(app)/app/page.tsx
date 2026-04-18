@@ -46,6 +46,17 @@ export default function AppHome(): React.JSX.Element {
       utils.account.me.invalidate();
     },
   });
+  const seedSample = trpc.evidence.seedSample.useMutation({
+    onSuccess: (result) => {
+      utils.evidence.count.invalidate();
+      utils.account.me.invalidate();
+      capture(EVENTS.SAMPLE_DATA_USED, {
+        inserted: result.inserted,
+        deduped: result.deduped,
+        capReached: result.capReached,
+      });
+    },
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pasteText, setPasteText] = useState("");
@@ -302,12 +313,32 @@ export default function AppHome(): React.JSX.Element {
           No data handy?{" "}
           <button
             type="button"
-            disabled
-            className="underline underline-offset-2 disabled:cursor-not-allowed"
-            title="Sample data ships in the next commit"
+            onClick={() => seedSample.mutate()}
+            disabled={seedSample.isPending}
+            className="underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ color: "var(--color-brand-accent)" }}
           >
-            Use sample data
+            {seedSample.isPending ? "Seeding…" : "Use sample data"}
           </button>
+          {seedSample.data && !seedSample.isPending && (
+            <span
+              className="ml-2 text-xs"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              {seedSample.data.inserted > 0
+                ? `Added ${seedSample.data.inserted}${seedSample.data.deduped > 0 ? ` (${seedSample.data.deduped} already present)` : ""}.`
+                : `${seedSample.data.deduped} samples already present.`}
+              {seedSample.data.capReached && " Plan cap reached — upgrade to seed the rest."}
+            </span>
+          )}
+          {seedSample.error && (
+            <span
+              className="ml-2 text-xs"
+              style={{ color: "var(--color-danger)" }}
+            >
+              {seedSample.error.message}
+            </span>
+          )}
         </p>
       </section>
 

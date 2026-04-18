@@ -135,6 +135,8 @@ Router entrypoints (`trpc.evidence.*`):
 
 **Auth outside tRPC.** `server/auth.ts > withAuthedAccountTx(fn)` is the Route-Handler-facing equivalent of the tRPC authed middleware: resolves the Clerk session → looks up user + account + plan → opens a transaction → binds `app.current_account_id`. Do NOT reuse from feature code — feature code goes through tRPC. This helper exists because multipart uploads can't ride tRPC cleanly.
 
+**Sample-data seeder.** `lib/evidence/sample-seed.ts > seedSampleEvidence(ctx)` ingests a curated 15-piece corpus that clusters into 5 distinct pain points (onboarding confusion, mobile perf, share-link expiry, pricing confusion, CSV export bugs). Wired to the "Use sample data" button on `/app`. Idempotent — the UNIQUE(account, source_type, source_ref) dedup index means re-clicking returns `deduped` counts for everything already present, not duplicate rows. Plan-cap aware: if we hit the Free-plan 10-row cap mid-seed, the loop bails with `capReached: true` so the UI surfaces the upgrade CTA instead of a generic error. Every sample piece has a stable `sample:<slug>` sourceRef so the dedup semantic is permanent across schema migrations. Emits `SAMPLE_DATA_USED` with `{inserted, deduped, capReached}` so funnel analysis can separate "PM brought their own data" vs "PM used samples to evaluate."
+
 **PostHog event:** `FIRST_UPLOAD_STARTED` fires once per session when `evidence.count` crosses zero — funnel step 2 from plan §7.
 
 **What's not in this commit (follow-ups):**

@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { evidence } from "@/db/schema";
 import { ingestEvidence } from "@/lib/evidence/ingest";
+import { seedSampleEvidence } from "@/lib/evidence/sample-seed";
 import { countResource } from "@/lib/plans";
 import { authedProcedure, router } from "@/server/trpc";
 
@@ -107,5 +108,18 @@ export const evidenceRouter = router({
   count: authedProcedure.query(async ({ ctx }) => {
     const count = await countResource(ctx.db, "evidence", ctx.accountId);
     return { count };
+  }),
+
+  /**
+   * Seed a curated 15-piece sample corpus so a new account can see
+   * clusters + opportunities + specs end-to-end without bringing
+   * their own data. Idempotent — re-running returns deduped counts.
+   */
+  seedSample: authedProcedure.mutation(async ({ ctx }) => {
+    return seedSampleEvidence({
+      db: ctx.db,
+      accountId: ctx.accountId,
+      plan: ctx.plan,
+    });
   }),
 });

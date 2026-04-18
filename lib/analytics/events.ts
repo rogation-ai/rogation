@@ -29,6 +29,9 @@ export const EVENTS = {
   /** User exported a spec to Linear / Notion / Markdown for the first time. Client-side. */
   FIRST_SPEC_EXPORTED: "first_spec_exported",
 
+  /** User clicked "Use sample data" on the onboarding wizard. Client-side. */
+  SAMPLE_DATA_USED: "sample_data_used",
+
   /** Token budget crossed the 80% soft cap. Server-side. */
   TOKEN_BUDGET_WARNING: "token_budget_warning",
 
@@ -57,6 +60,11 @@ export interface EventProperties {
   };
   [EVENTS.FIRST_SPEC_EXPORTED]: {
     target: "markdown" | "linear" | "notion";
+  };
+  [EVENTS.SAMPLE_DATA_USED]: {
+    inserted: number;
+    deduped: number;
+    capReached: boolean;
   };
   [EVENTS.TOKEN_BUDGET_WARNING]: {
     plan: "free" | "solo" | "pro";
