@@ -216,6 +216,29 @@ PMs don't regenerate from scratch when one section is off — they iterate. The 
 - **tRPC.** `trpc.specs.refinements({ opportunityId })` → `Array<{id, role, content, createdAt}>` sorted ascending. Client invalidates it on every `done` event so new turns swap in without a page reload.
 - **Editor chat panel.** `<ChatPanel>` in `app/(app)/spec/[opportunityId]/page.tsx`. Scrollable history of prior turns + a streaming "Assistant" bubble with `<StreamingCursor/>` during the current turn + a textarea with `⌘Enter`-to-send. Empty state explicitly prompts for the right kind of ask ("tighten", "reword", "add an edge case…") so PMs don't freeze at the blank input.
 
+## Feedback thumbs (eval loop)
+
+PMs thumbs-up/down clusters, opportunities, and specs. Each vote captures the target's `prompt_hash` server-side so:
+
+```sql
+SELECT prompt_hash,
+       COUNT(*) FILTER (WHERE rating = 'down') AS downs,
+       COUNT(*) FILTER (WHERE rating = 'up')   AS ups
+FROM entity_feedback
+GROUP BY prompt_hash
+ORDER BY downs::float / NULLIF(ups + downs, 0) DESC;
+```
+
+tells us which prompt hash is regressing. Run after every prompt edit to confirm the new hash isn't tanking real-user approval.
+
+- **Schema.** `entity_feedback` existed in the initial migration; `db/migrations/0003_entity_feedback_unique.sql` adds a partial `UNIQUE(account_id, user_id, entity_type, entity_id) WHERE user_id IS NOT NULL` so the vote mutation can UPSERT on the conflict target. Null `user_id` (deleted voter) doesn't participate in the unique index — historical votes stay tied to the row.
+- **Server.** `lib/evidence/feedback.ts`: `voteOnEntity`, `removeVote`, `myVotes`, `aggregateByPrompt`. The `prompt_hash` is looked up server-side from the target row (`insight_cluster.prompt_hash` / `opportunity.prompt_hash` / `spec.prompt_hash`) at vote time — clients never send it, so a fake/forged hash can't poison the eval stream. Cross-account votes fail because RLS scopes the lookup to zero rows, which the helper treats as "target not found."
+- **Router.** `trpc.feedback.*`: `vote` / `remove` / `mine({ entityType, entityIds })` / `aggregate`. `mine` is the batch-read the client hook uses on page load.
+- **Primitive.** `components/ui/FeedbackThumbs.tsx` (10th shared primitive). Two buttons, `aria-pressed` toggled state, clicking the active rating clears it (undo). `sm` + `lg` size variants.
+- **Client hook.** `lib/client/use-feedback-thumbs.ts > useFeedbackThumbs(entityType, entityIds)` returns `{ votes, setVote, isPending }`. Feature pages call it once with the full id list for the page, then render `<FeedbackThumbs value={votes[id]} onChange={v => setVote(id, v)} />` per row. No N+1.
+- **Wired surfaces.** Insights (cluster detail header), `/build` (per opportunity row), `/spec/[id]` (alongside the readiness grade). Every v1 LLM-generated entity is ratable.
+- **Tests.** `test/feedback.test.ts` — DB-gated. Locks down: prompt_hash captured server-side, UPSERT on revote (no duplicates), RLS blocks cross-account votes, `myVotes` batch-reads, `aggregateByPrompt` computes correct ups/downs.
+
 Upstash Redis + sliding-window algorithm via `@upstash/ratelimit`. One module, one preset table, one check helper.
 
 - **Presets.** `lib/rate-limit.ts > RATE_LIMIT_PRESETS` is the audit trail. Surfaces: `share-link` (by IP, for `/s/:token` enumeration protection), `spec-chat` (by accountId, for chat refinement abuse), `checkout-create` (by accountId, 10/hr — Stripe API costs real money when spammed), `webhook` (per-IP defense in depth on signed endpoints).

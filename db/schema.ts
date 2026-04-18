@@ -487,6 +487,11 @@ export const entityFeedback = pgTable(
       t.accountId,
       t.createdAt.desc(),
     ),
+    // One vote per (account, user, entity). Partial — null user_id
+    // (deleted voter) doesn't participate, so historical votes stay.
+    uniqueIndex("feedback_user_entity_unique")
+      .on(t.accountId, t.userId, t.entityType, t.entityId)
+      .where(sql`${t.userId} IS NOT NULL`),
   ],
 );
 

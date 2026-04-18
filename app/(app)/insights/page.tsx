@@ -5,7 +5,9 @@ import { trpc } from "@/lib/trpc";
 import { SeverityPill } from "@/components/ui/SeverityPill";
 import { StaleBanner } from "@/components/ui/StaleBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
+import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 
 /*
   Insights — approximates approved mockup insights-A-v2:
@@ -40,6 +42,9 @@ export default function InsightsPage(): React.JSX.Element {
     { clusterId: selectedId ?? "" },
     { enabled: Boolean(selectedId) },
   );
+
+  const clusterIds = (list.data ?? []).map((c) => c.id);
+  const feedback = useFeedbackThumbs("insight_cluster", clusterIds);
 
   const count = evCount.data?.count ?? 0;
   const clusters = list.data ?? [];
@@ -155,6 +160,11 @@ export default function InsightsPage(): React.JSX.Element {
               <SeverityPill
                 severity={detail.data.severity}
                 count={detail.data.frequency}
+              />
+              <FeedbackThumbs
+                value={feedback.votes[detail.data.id] ?? null}
+                onChange={(next) => feedback.setVote(detail.data.id, next)}
+                label={`Rate cluster: ${detail.data.title}`}
               />
             </header>
 

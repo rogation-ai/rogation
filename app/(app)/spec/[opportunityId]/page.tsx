@@ -5,11 +5,13 @@ import { use, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
 import { StreamingCursor } from "@/components/ui/StreamingCursor";
 import { capture } from "@/lib/analytics/posthog-client";
 import { EVENTS } from "@/lib/analytics/events";
 import { sseFetch } from "@/lib/client/sse-fetch";
+import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 import type { SpecIR } from "@/lib/spec/ir";
 
 /*
@@ -53,6 +55,11 @@ export default function SpecEditorPage({
   );
   const opps = trpc.opportunities.list.useQuery();
   const opportunity = opps.data?.find((o) => o.id === opportunityId);
+
+  const specFeedback = useFeedbackThumbs(
+    "spec",
+    latest.data ? [latest.data.id] : [],
+  );
 
   const [streamText, setStreamText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -233,6 +240,21 @@ export default function SpecEditorPage({
                 }
               }
             />
+            <div
+              className="flex items-center justify-between rounded-lg border p-3 text-xs"
+              style={{
+                borderColor: "var(--color-border-subtle)",
+                background: "var(--color-surface-raised)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <span>Rate this spec</span>
+              <FeedbackThumbs
+                value={specFeedback.votes[spec.id] ?? null}
+                onChange={(next) => specFeedback.setVote(spec.id, next)}
+                label="Rate spec"
+              />
+            </div>
             <div className="flex flex-col gap-2">
               <button
                 type="button"

@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { ConfidenceBadge } from "@/components/ui/ConfidenceBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
+import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 
 /*
   What to build — ranked opportunities + five weight sliders with
@@ -149,6 +151,9 @@ export default function BuildPage(): React.JSX.Element {
       .sort((a, b) => b.score - a.score);
   }, [list.data, weights]);
 
+  const opportunityIds = (list.data ?? []).map((o) => o.id);
+  const feedback = useFeedbackThumbs("opportunity", opportunityIds);
+
   if (list.isLoading || weightsQ.isLoading) {
     return <SkeletonList count={5} />;
   }
@@ -250,7 +255,12 @@ export default function BuildPage(): React.JSX.Element {
               >
                 {o.reasoning}
               </p>
-              <div className="mt-1 flex items-center justify-end">
+              <div className="mt-1 flex items-center justify-between">
+                <FeedbackThumbs
+                  value={feedback.votes[o.id] ?? null}
+                  onChange={(next) => feedback.setVote(o.id, next)}
+                  label={`Rate opportunity: ${o.title}`}
+                />
                 <Link
                   href={`/spec/${o.id}`}
                   className="rounded-md border px-3 py-1 text-xs font-medium transition hover:brightness-110"
