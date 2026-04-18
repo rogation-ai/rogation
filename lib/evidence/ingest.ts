@@ -58,8 +58,6 @@ export async function ingestEvidence(
   ctx: IngestContext,
   input: IngestInput,
 ): Promise<IngestResult> {
-  await assertResourceLimit(ctx.db, ctx.plan, ctx.accountId, "evidence");
-
   const normalized = normalizeEvidenceText(input.content);
   const contentHash = hashEvidenceContent(input.content);
 
@@ -67,7 +65,11 @@ export async function ingestEvidence(
     throw new Error("Cannot ingest empty content");
   }
 
-  // Dedup — the router + upload handler both check here before write.
+  // Dedup FIRST, plan-limit AFTER. A re-ingest of an existing row
+  // shouldn't count against the cap — otherwise "Use sample data"
+  // at 10/10 throws FORBIDDEN on sample #1 instead of returning
+  // `deduped: true` for all 10 (bug found 2026-04-18 QA).
+  //
   // Concurrent identical pastes/uploads can still race past this; the
   // UNIQUE(account_id, source_type, source_ref) index is the last line
   // of defense (schema migration 0000).
@@ -85,6 +87,9 @@ export async function ingestEvidence(
   if (existing) {
     return { id: existing.id, deduped: true };
   }
+
+  // Only NEW rows count against the plan cap.
+  await assertResourceLimit(ctx.db, ctx.plan, ctx.accountId, "evidence");
 
   const sourceRef = input.sourceRef ?? `content:${contentHash.slice(0, 12)}`;
 
