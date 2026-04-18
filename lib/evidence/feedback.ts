@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   entityFeedback,
   insightClusters,
@@ -88,6 +88,12 @@ export async function voteOnEntity(
         entityFeedback.entityType,
         entityFeedback.entityId,
       ],
+      // The unique index is PARTIAL (WHERE user_id IS NOT NULL) so
+      // Postgres requires the same predicate on the ON CONFLICT
+      // target, otherwise "there is no unique or exclusion
+      // constraint matching the ON CONFLICT specification."
+      // Found by /qa on 2026-04-18.
+      targetWhere: isNotNull(entityFeedback.userId),
       set: {
         rating: input.rating,
         note: input.note,
