@@ -131,23 +131,11 @@ export async function complete<Input, Output>(
       ]
     : prompt.system;
 
-  // User content is split at cacheBoundary when provided + cache=true.
-  // Everything before the boundary gets cache_control; the tail after
-  // is the fresh part of the request.
-  const userContent =
-    opts.cache && typeof built.cacheBoundary === "number"
-      ? [
-          {
-            type: "text" as const,
-            text: built.user.slice(0, built.cacheBoundary),
-            cache_control: { type: "ephemeral" as const },
-          },
-          {
-            type: "text" as const,
-            text: built.user.slice(built.cacheBoundary),
-          },
-        ]
-      : built.user;
+  const userContent = buildUserContent(
+    built.user,
+    built.cacheBoundary,
+    opts.cache ?? false,
+  );
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -275,20 +263,11 @@ export async function* completeStream<Input, Output>(
       ]
     : prompt.system;
 
-  const userContent =
-    opts.cache && typeof built.cacheBoundary === "number"
-      ? [
-          {
-            type: "text" as const,
-            text: built.user.slice(0, built.cacheBoundary),
-            cache_control: { type: "ephemeral" as const },
-          },
-          {
-            type: "text" as const,
-            text: built.user.slice(built.cacheBoundary),
-          },
-        ]
-      : built.user;
+  const userContent = buildUserContent(
+    built.user,
+    built.cacheBoundary,
+    opts.cache ?? false,
+  );
 
   const stream = anthropic().messages.stream(
     {
@@ -377,6 +356,58 @@ export async function embed(
     input: items,
   });
   return res.data.map((d) => d.embedding);
+}
+
+/* --------------------------- message builders --------------------------- */
+
+type UserTextBlock = {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral" };
+};
+
+/**
+ * Shape the `messages[0].content` field for Anthropic.
+ *
+ * Three cases:
+ *   1. No caching → send the user string as-is.
+ *   2. Cache + boundary is strictly inside the string → two text blocks,
+ *      cache_control on the prefix, fresh tail follows.
+ *   3. Cache + boundary is at or past the end → ONE text block with
+ *      cache_control (no empty trailing block). Anthropic rejects empty
+ *      text blocks; a prompt whose entire user message is stable
+ *      (synthesis, opportunity-score, spec-generate) hits this case.
+ *
+ * A boundary of 0 means "nothing stable" → same as case 1; we don't emit
+ * an empty cache-control prefix either.
+ */
+export function buildUserContent(
+  user: string,
+  cacheBoundary: number | undefined,
+  cache: boolean,
+): string | UserTextBlock[] {
+  if (!cache || typeof cacheBoundary !== "number") return user;
+
+  const boundary = Math.max(0, Math.min(cacheBoundary, user.length));
+  const prefix = user.slice(0, boundary);
+  const tail = user.slice(boundary);
+
+  if (prefix.length === 0) {
+    // Nothing stable to cache; fall back to the plain-string form.
+    return user;
+  }
+
+  const blocks: UserTextBlock[] = [
+    {
+      type: "text",
+      text: prefix,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+  if (tail.length > 0) {
+    blocks.push({ type: "text", text: tail });
+  }
+  return blocks;
 }
 
 /* ----------------------------- retry helpers ------------------------------ */
