@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { bandFor, bandPct } from "@/components/ui/PlanMeter";
 import { bandForConfidence } from "@/components/ui/ConfidenceBadge";
+import { sourceLabel, type SourceType } from "@/components/ui/SourceIcon";
+import { truncateSegment } from "@/components/ui/SegmentTag";
 
 /*
   Pure-logic tests for the shared UI primitives. Visual regression
@@ -70,5 +72,43 @@ describe("ConfidenceBadge.bandForConfidence", () => {
   it("clamps out-of-range scores to [0, 1]", () => {
     expect(bandForConfidence(-0.5).label).toBe("Low");
     expect(bandForConfidence(1.5).label).toBe("High");
+  });
+});
+
+describe("SourceIcon.sourceLabel", () => {
+  it.each<[SourceType, string]>([
+    ["upload_transcript", "Transcript"],
+    ["upload_text", "Text"],
+    ["upload_pdf", "PDF"],
+    ["upload_csv", "CSV"],
+    ["paste_ticket", "Pasted ticket"],
+    ["zendesk", "Zendesk"],
+    ["posthog", "PostHog"],
+    ["canny", "Canny"],
+  ])("%s -> %s", (source, expected) => {
+    expect(sourceLabel(source)).toBe(expected);
+  });
+});
+
+describe("SegmentTag.truncateSegment", () => {
+  it("returns short names unchanged", () => {
+    expect(truncateSegment("enterprise")).toBe("enterprise");
+  });
+
+  it("truncates names longer than max with an ellipsis", () => {
+    // Default max = 24; 25 chars should truncate to 23 + "…"
+    const long = "enterprise-customers-north-america";
+    const out = truncateSegment(long);
+    expect(out.endsWith("…")).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(24);
+  });
+
+  it("respects a custom max", () => {
+    expect(truncateSegment("mobile-users", 6)).toBe("mobil…");
+  });
+
+  it("leaves names exactly at max untouched", () => {
+    const exact = "x".repeat(24);
+    expect(truncateSegment(exact)).toBe(exact);
   });
 });
