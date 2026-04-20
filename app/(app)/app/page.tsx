@@ -63,6 +63,7 @@ export default function AppHome(): React.JSX.Element {
   const [firstUploadFired, setFirstUploadFired] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [splitOnBlankLines, setSplitOnBlankLines] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResult[] | null>(
     null,
   );
@@ -102,6 +103,7 @@ export default function AppHome(): React.JSX.Element {
 
     const form = new FormData();
     for (const file of list) form.append("files", file);
+    if (splitOnBlankLines) form.append("splitOnBlankLines", "true");
 
     try {
       const res = await fetch("/api/evidence/upload", {
@@ -201,6 +203,28 @@ export default function AppHome(): React.JSX.Element {
             onChange={(e) => e.target.files && uploadFiles(e.target.files)}
           />
         </div>
+
+        <label
+          className="mt-3 flex items-center gap-2 text-xs"
+          style={{ color: "var(--color-text-secondary)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={splitOnBlankLines}
+            onChange={(e) => setSplitOnBlankLines(e.target.checked)}
+            disabled={isUploading}
+          />
+          <span>
+            Split each file into one entry per paragraph
+            <span
+              className="ml-1"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              · good for ticket dumps, skip for transcripts
+            </span>
+          </span>
+        </label>
 
         {uploadResults && (
           <ul

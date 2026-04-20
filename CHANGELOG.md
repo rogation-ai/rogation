@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.6.0.0] - 2026-04-20
+
+Upload a file with 20 support tickets in it, get 20 evidence rows instead of one blob.
+
+### Added
+
+- **"Split each file into one entry per paragraph" checkbox on the Upload screen.** Opt-in. When enabled, .txt / .md files are split on blank-line separators before ingestion. Each block becomes its own evidence row with a `sourceRef` like `upload:tickets.txt#block-3` so dedup + the library list track individual entries. Single-newline-separated content (speaker-turn transcripts) stays intact. Capped at 100 blocks per file so a pathological input can't swamp the plan meter.
+
 ## [0.4.0.0] - 2026-04-20
 
 Evidence library. PMs can finally see everything they've pasted and take it back.
