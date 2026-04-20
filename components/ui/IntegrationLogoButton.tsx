@@ -106,7 +106,7 @@ export function IntegrationLogoButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-pressed={connected}
+      aria-label={connected ? `${displayLabel}, connected` : displayLabel}
       className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-surface-raised)] disabled:cursor-not-allowed disabled:opacity-50"
       style={{
         borderColor: connected
