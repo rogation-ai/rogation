@@ -4,6 +4,28 @@ Deferred work items captured during planning. Each has context so someone pickin
 
 ---
 
+## CI DB test harness refactor (P1)
+
+**What:** DB-backed integration tests (account-provision, evidence-ingest, llm-usage, plans-integration, tenant-isolation, feedback) are skipped in CI. The pgvector service container + `TEST_DATABASE_URL` were removed from `.github/workflows/ci.yml` on 2026-04-20.
+
+**Why:** The current `test/setup-db.ts` creates an isolated per-file schema (`test_<label>_<timestamp>`) and runs migrations into it. That works for tests using `handle.db` exclusively. It breaks for tests that call app code — `provisionAccountForClerkUser` imports `db` from `@/db/client` which connects via `env.DATABASE_URL` with default `public` search_path. Two worlds. The tests-that-call-app-code see empty tables in public while the isolated test schema stays untouched.
+
+Surfaced during the v0.1.0.0 ship: CI consistently failed with `type "..." already exists`, then `relation "public.account" does not exist`, then `password authentication failed for user "runner"` after each incremental fix. Root cause is architectural, not a one-line patch.
+
+**How to close:** Pick one of:
+
+1. **Drop schema isolation, use `public` + truncate between files.** Tests run sequentially (`fileParallelism: false` already). Drop + recreate `public` in `setupTestDb`, install extensions, run migrations once. App's `db` and `handle.db` see the same tables. Simplest; matches what the tests were implicitly assuming.
+
+2. **Point app `db` at the test connection.** Mock `@/db/client` in a vitest setup file so the singleton uses the test harness's connection + search_path. Keeps per-file isolation but requires every test file to share one mock config.
+
+3. **Refactor app code to accept injected `db`.** `provisionAccountForClerkUser(input, { db = globalDb })` etc. Cleanest long-term but touches every app helper.
+
+Recommend option 1 for v1.1. Re-enable the pgvector service container + `TEST_DATABASE_URL` in CI after the refactor lands.
+
+**Blocked by:** Nothing. Do before the next feature that touches RLS or account provisioning, because you'll want integration coverage back before changing load-bearing code.
+
+---
+
 ## Weekly digest email
 
 **What:** Weekly "3 new insights since last week" email to re-engage PMs.
@@ -24,3 +46,35 @@ Deferred work items captured during planning. Each has context so someone pickin
 **Depends on:** Outcome data + insight clustering stable (so v1 wk 8+ is the earliest sensible time).
 
 **Blocked by:** Nothing technical — pure scope deferral.
+
+---
+
+## Coverage gaps at tRPC/route-handler wrappers (P1)
+
+**What:** Three thin-wrapper branches lack unit tests because the project doesn't have a tRPC caller harness yet.
+
+1. `app/api/oauth/linear/callback/route.ts` — the `account_mismatch` cross-check (state.accountId vs session.accountId). The underlying `verifyState` is 6/6 ★★★ tested in `test/oauth-state.test.ts`, but the cross-tenant guard is not.
+2. `server/routers/integrations.ts > linearTeams` — the 401 → `status: "token_invalid"` state flip. Same pattern IS tested in `test/push-linear-preconditions.test.ts` via `pushSpecToLinear`, but the integrations router write path is a separate call site.
+3. `server/routers/specs.ts > pushToLinear` — the plan-gate (`canExport` returns false → FORBIDDEN) and rate-limit gate (`checkLimit` returns false → TOO_MANY_REQUESTS). Both branches short-circuit BEFORE the well-tested orchestrator in `lib/evidence/push-linear.ts`.
+
+**Why:** Security-critical logic is already ★★★ covered (crypto envelope, HMAC state, push orchestrator). The gaps are in the 3-10 lines of code that glue tRPC error codes to orchestrator return values. Surfaced by /ship coverage audit 2026-04-20 at 72% (between 60% min and 80% target). User accepted the risk; tracked here so it doesn't rot.
+
+**How to close:** Either (a) build a minimal tRPC caller harness wrapping `appRouter.createCaller(ctx)` with mocked `ctx.db` + `ctx.plan`, or (b) write an integration test that signs up a real test account, provisions a Linear credential row, and exercises the resolver end-to-end. Option (a) is faster; option (b) catches RLS drift too.
+
+**Blocked by:** Nothing. Pick up any time a resolver bug ships and you wish you had caught it here.
+
+---
+
+## Split OAuth state signing key from credential encryption key (P2)
+
+**What:** `INTEGRATION_ENCRYPTION_KEY` is currently used for BOTH:
+- AES-256-GCM encryption of stored OAuth access tokens (`lib/crypto/envelope.ts`)
+- HMAC-SHA256 signing of in-flight OAuth state params (`lib/integrations/state.ts`)
+
+Rotating that one env var invalidates every stored credential AND every in-flight OAuth flow at the same moment.
+
+**Why:** Defense-in-depth decoupling. When the first key-rotation becomes necessary (compromise, scheduled rotation policy, SOC2 prep), you want to rotate credential encryption independently of OAuth state signing. Today's single-key setup forces a coordinated outage.
+
+**How to close:** Add `INTEGRATION_STATE_SIGNING_KEY` to `env.ts` (optional, falls back to `INTEGRATION_ENCRYPTION_KEY` so existing deploys don't break). Update `lib/integrations/state.ts > keyBytes()` to prefer the new var when set. Document the rotation pattern in CLAUDE.md.
+
+**Blocked by:** First real key rotation need. Probably ≥6 months out.

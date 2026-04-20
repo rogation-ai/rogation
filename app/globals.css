@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+/*
+  Rogation design tokens — source of truth is DESIGN.md.
+  Light palette by default. Dark palette via .dark class OR prefers-color-scheme.
+  All component colors MUST reference these vars. No hardcoded hex in app code.
+*/
+
+@theme {
+  --font-display: "Tiempos Headline", "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: "Söhne", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Söhne Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-brand-accent: #D04B3F;
+  --color-brand-accent-ink: #A03027;
+
+  --color-surface-marketing: #F8F1E6;
+  --color-surface-app: #FFFFFF;
+  --color-surface-raised: #FBFAF7;
+  --color-surface-sunken: #F5F2EC;
+  --color-surface-inverse: #1A1815;
+
+  --color-text-primary: #1A1815;
+  --color-text-secondary: #5C5651;
+  --color-text-tertiary: #8A847E;
+  --color-text-inverse: #F8F1E6;
+
+  --color-border-subtle: #EAE5DC;
+  --color-border-default: #D9D3C7;
+  --color-border-strong: #1A1815;
+
+  --color-success: #2F7A4F;
+  --color-warning: #B4701E;
+  --color-danger: #B93A2E;
+  --color-info: #4A6B84;
+
+  --color-severity-low: #8A847E;
+  --color-severity-medium: #B4701E;
+  --color-severity-high: #B93A2E;
+  --color-severity-critical: #5C1410;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 24px;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-brand-accent: #E45D50;
+    --color-brand-accent-ink: #FF8274;
+
+    --color-surface-marketing: #14120F;
+    --color-surface-app: #0E0D0B;
+    --color-surface-raised: #1E1B17;
+    --color-surface-sunken: #0A0907;
+    --color-surface-inverse: #F8F1E6;
+
+    --color-text-primary: #F1ECE2;
+    --color-text-secondary: #B4ADA2;
+    --color-text-tertiary: #7A746B;
+    --color-text-inverse: #1A1815;
+
+    --color-border-subtle: #2A2622;
+    --color-border-default: #3A3530;
+    --color-border-strong: #F1ECE2;
+
+    --color-success: #4FA874;
+    --color-warning: #D89045;
+    --color-danger: #E56758;
+    --color-info: #8FB5CF;
+
+    --color-severity-low: #7A746B;
+    --color-severity-medium: #D89045;
+    --color-severity-high: #E56758;
+    --color-severity-critical: #FF8274;
+  }
+}
+
+html {
+  background: var(--color-surface-marketing);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+}
+
+body {
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Respect reduced motion across the board. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* StreamingCursor blink. Tied to a named class so we don't animate
+   other inline-blocks; reduced-motion freezes the cursor solid via
+   the global rule above. */
+@keyframes rogation-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.25; }
+}
+.rogation-streaming-cursor {
+  animation: rogation-cursor-blink 900ms steps(1, end) infinite;
+}
