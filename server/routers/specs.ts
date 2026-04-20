@@ -106,7 +106,7 @@ export const specsRouter = router({
       if (!canExport(ctx.plan, "linear")) {
         throw new TRPCError({
           code: "FORBIDDEN",
-          message: "Linear export requires the Solo plan or higher.",
+          message: "Linear export requires the Pro plan.",
           cause: { type: "plan_limit_reached", feature: "linear-export" },
         });
       }
