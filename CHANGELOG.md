@@ -4,6 +4,20 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.1.0.1] - 2026-04-20
+
+Deploy plumbing for Vercel. Adds a public health probe so uptime monitors and the `/land-and-deploy` workflow have something concrete to check after a merge.
+
+### Added
+
+- **`GET /api/health`.** Returns `{ok, db, version, commit, latencyMs}` — 200 when the app responds AND Postgres answers `SELECT 1`, 503 when the DB is unreachable. No auth, no account context. Paired with `VERCEL_GIT_COMMIT_SHA` so canary checks can assert the live commit matches the just-merged SHA.
+- **Deploy Configuration section in CLAUDE.md.** Captures platform (Vercel), health contract, merge method, and a 6-step checklist for first-time Vercel setup (link project, set env vars, verify probe). `/land-and-deploy` reads this automatically on future deploys.
+
+### Changed
+
+- **ESLint trust allowlist.** `app/api/health/**` joins `db/**`, `server/trpc.ts`, `app/api/webhooks/**`, and `lib/account/**` as paths allowed to import `@/db/client` directly. The health probe is intentionally account-agnostic.
+- **`.gitignore`.** Hardened with `.env*.local` (added by `vercel link`) so per-environment local env files can never be committed.
+
 ## [0.1.0.0] - 2026-04-20
 
 First real release. Takes Rogation from empty repo to a working v1 PM-synthesis app: paste evidence, watch clusters form, pick an opportunity, stream a spec, refine it over chat, push it to Linear as a real issue.
