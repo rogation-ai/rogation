@@ -10,6 +10,7 @@ import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
 import { StreamingCursor } from "@/components/ui/StreamingCursor";
 import { capture } from "@/lib/analytics/posthog-client";
+import { canExport } from "@/lib/plans";
 import { EVENTS } from "@/lib/analytics/events";
 import { sseFetch } from "@/lib/client/sse-fetch";
 import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
@@ -790,7 +791,7 @@ function LinearPushBlock({
     );
   }
 
-  if (plan === "free") {
+  if (!canExport(plan, "linear")) {
     return (
       <Link
         href="/pricing"
@@ -800,7 +801,7 @@ function LinearPushBlock({
           color: "var(--color-text-secondary)",
         }}
       >
-        Push to Linear · Upgrade to Solo →
+        Push to Linear · Upgrade to Pro →
       </Link>
     );
   }

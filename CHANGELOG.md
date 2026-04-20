@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.3.0.0] - 2026-04-20
+
+Pricing page. First real path from "try it free" to "pay us money" without a support-channel hand-off.
+
+### Added
+
+- **Public `/pricing` page.** Three tier cards (Free / Solo / Pro) with feature lists + live CTAs. Signed-out visitors land in sign-up (with `?upgrade=<tier>` carried through). Signed-in free users get an Upgrade button that kicks off `trpc.billing.createCheckout` and redirects to Stripe Checkout. Existing paid subscribers get a Manage billing button that opens the Stripe Customer Portal. Current plan is marked so PMs don't buy a second subscription by accident. Wired the "Pricing" link on the landing page (was a dead `#` anchor).
+
 ## [0.2.0.0] - 2026-04-20
 
 P1 hardening sprint. Finishes the shared UI inventory, tightens every rough edge on the Linear integration we flagged during v0.1 adversarial review, and fixes the "version: unknown" field the health probe was returning from Vercel.
