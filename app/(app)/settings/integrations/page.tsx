@@ -279,13 +279,8 @@ function LinearTeamPicker({ current }: { current: string | null }): React.JSX.El
           type="button"
           disabled={!pickedId || setTeam.isPending}
           onClick={() => {
-            const team = teams.find((t) => t.id === pickedId);
-            if (!team) return;
-            setTeam.mutate({
-              teamId: team.id,
-              teamName: team.name,
-              teamKey: team.key,
-            });
+            if (!pickedId) return;
+            setTeam.mutate({ teamId: pickedId });
           }}
           className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
           style={{

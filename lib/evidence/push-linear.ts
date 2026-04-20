@@ -197,7 +197,7 @@ export async function pushSpecToLinear(
       linearPushedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(specs.id, spec.id));
+    .where(and(eq(specs.id, spec.id), eq(specs.accountId, ctx.accountId)));
 
   return {
     ok: true,

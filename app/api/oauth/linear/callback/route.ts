@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import { type NextRequest, NextResponse } from "next/server";
 import { integrationCredentials, integrationState } from "@/db/schema";
 import { env } from "@/env";
@@ -78,9 +79,38 @@ export async function GET(req: NextRequest) {
       console.warn("Linear OAuth callback: provider call failed:", err);
       return { ok: false as const, reason: "exchange_failed" };
     }
+    // If reconnect lands on a different workspace, the prior
+    // defaultTeamId/Name/Key belongs to teams the new token can't see.
+    // Leaving them would cause the next spec push to 404 on a team the
+    // user doesn't remember picking. Preserve them only when the
+    // workspace matches.
+    const [priorState] = await ctx.db
+      .select({ config: integrationState.config })
+      .from(integrationState)
+      .where(
+        and(
+          eq(integrationState.accountId, ctx.accountId),
+          eq(integrationState.provider, "linear"),
+        ),
+      )
+      .limit(1);
+    const prior =
+      priorState?.config &&
+      typeof priorState.config === "object" &&
+      !Array.isArray(priorState.config)
+        ? (priorState.config as LinearIntegrationConfig)
+        : null;
+    const sameWorkspace = prior?.workspaceId === viewer.workspace.id;
     const config: LinearIntegrationConfig = {
       workspaceId: viewer.workspace.id,
       workspaceName: viewer.workspace.name,
+      ...(sameWorkspace
+        ? {
+            defaultTeamId: prior?.defaultTeamId,
+            defaultTeamName: prior?.defaultTeamName,
+            defaultTeamKey: prior?.defaultTeamKey,
+          }
+        : {}),
     };
 
     const blob = encrypt(token.access_token);

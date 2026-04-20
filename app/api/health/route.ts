@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import pkg from "@/package.json";
 
 /*
   Public health probe for /land-and-deploy + /canary + uptime monitors.
@@ -16,7 +17,12 @@ import { db } from "@/db/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const VERSION = process.env.npm_package_version ?? "unknown";
+// `process.env.npm_package_version` is set by npm/bun run, but Vercel's
+// serverless runtime doesn't populate it, so we'd show "unknown" in
+// prod. Import package.json at build time so the version lands as a
+// constant in the compiled bundle. The `VERSION` file stays the source
+// of truth, and /ship keeps package.json in sync with it.
+const VERSION = (pkg as { version?: string }).version ?? "unknown";
 const COMMIT = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "unknown";
 
 export async function GET() {

@@ -4,6 +4,26 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.2.0.0] - 2026-04-20
+
+P1 hardening sprint. Finishes the shared UI inventory, tightens every rough edge on the Linear integration we flagged during v0.1 adversarial review, and fixes the "version: unknown" field the health probe was returning from Vercel.
+
+### Added
+
+- **`SourceIcon`, `SegmentTag`, `IntegrationLogoButton`.** The final three shared UI primitives from DESIGN.md §6 (15/15 shipped). `SourceIcon` renders a monochrome 16px glyph for each evidence source (transcript, PDF, CSV, pasted ticket, Zendesk, PostHog, Canny). `SegmentTag` is the small outlined pill users will tap to filter evidence and clusters by segment. `IntegrationLogoButton` is the flat outlined tile for onboarding + `/settings/integrations` (connected, default, disabled states). Stories + pure-helper unit tests alongside.
+
+### Changed
+
+- **Linear push is account-safe end to end.** The spec-row update that stamps `linear_issue_*` now filters by `accountId` (matches the 4 `integration_state` updates). A rogue spec id across tenants can no longer land an issue on the wrong spec row.
+- **Linear client times out at 10s.** Every GraphQL request now carries `AbortSignal.timeout(10_000)`. A hung Linear provider can't pin a serverless invocation anymore — it surfaces as a 504-class `LinearApiError` the caller already handles.
+- **Revoked-token detection.** Linear returns HTTP 200 with a GraphQL error envelope on a revoked token. The client now parses `extensions.type === "AUTHENTICATION_ERROR"` and throws status 401, so the existing reconnect path in the integrations router fires instead of showing a generic failure.
+- **`setLinearDefaultTeam` validates against the live workspace.** A client posting a stale or cross-workspace `teamId` now gets a 400 with "That team no longer exists in your Linear workspace." The mutation also dropped `teamName` / `teamKey` from its input — they're looked up server-side from the live team list, so the client never controls display strings.
+- **Reconnect to a different workspace resets the default team.** `integration_state.config.defaultTeamId` / `defaultTeamName` / `defaultTeamKey` carry over only when the reconnect lands on the same workspace id. Switching workspaces clears them, preventing a "why is my next push 404-ing on a team I don't remember picking?" trap.
+
+### Fixed
+
+- **`GET /api/health` now returns the real version.** `process.env.npm_package_version` isn't populated by Vercel's serverless runtime, so the probe was returning `version: "unknown"`. Reads `package.json` at build time instead, so the canary check in `/land-and-deploy` can now assert the deployed version.
+
 ## [0.1.0.1] - 2026-04-20
 
 Deploy plumbing for Vercel. Adds a public health probe so uptime monitors and the `/land-and-deploy` workflow have something concrete to check after a merge.
