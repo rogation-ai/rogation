@@ -9,6 +9,7 @@ import {
   hashEvidenceContent,
   normalizeEvidenceText,
 } from "@/lib/evidence/hash";
+import { inngest, EVENT_EMBED_REQUESTED } from "@/lib/inngest/client";
 
 /*
   Shared ingestion pipeline. Paste (tRPC) and file upload (Route
@@ -47,6 +48,16 @@ export interface IngestInput {
   segment?: string;
   /** Optional metadata date for the evidence (e.g. interview timestamp). */
   date?: Date;
+  /**
+   * How to produce the 1536-d embedding:
+   *   - "sync" (default): embed inside this transaction. Adds ~200ms
+   *     per row. Right for paste (one row, user is watching).
+   *   - "defer": emit an `evidence/embed.requested` Inngest event and
+   *     return. The worker embeds out of band. Right for batch
+   *     uploads so a 20-file import doesn't burn the request's
+   *     serverless budget on OpenAI round-trips.
+   */
+  embed?: "sync" | "defer";
 }
 
 export interface IngestResult {
@@ -111,15 +122,38 @@ export async function ingestEvidence(
     throw new Error("Evidence insert returned no row");
   }
 
-  // Synchronous embed for v1. Batch uploads hit OpenAI's rate limit
-  // at ~200 req/min — the Inngest worker in a follow-up moves this
-  // off the request path.
-  const [vector] = await embed(normalized);
-  if (vector) {
-    await ctx.db.insert(evidenceEmbeddings).values({
-      evidenceId: row.id,
-      embedding: vector,
-      model: "text-embedding-3-small",
+  const embedMode = input.embed ?? "sync";
+
+  if (embedMode === "sync") {
+    // Paste path: one row, user is watching, ~200ms is fine. Worth
+    // doing inside the tx so a failed embed rolls the row back —
+    // retry the paste and you don't end up with an un-embedded row
+    // stranded in the library.
+    const [vector] = await embed(normalized);
+    if (vector) {
+      await ctx.db.insert(evidenceEmbeddings).values({
+        evidenceId: row.id,
+        embedding: vector,
+        model: "text-embedding-3-small",
+      });
+    }
+  } else {
+    // Batch / upload path: defer. The evidence row is already
+    // inserted so dedup + plan-meter + library list all reflect it
+    // immediately. The Inngest worker inserts evidence_embedding
+    // when it fires, with its own retry + backoff on provider
+    // failures. Clustering (Phase A) reads raw content, so a brief
+    // window without an embedding doesn't break anything —
+    // KNN-based incremental re-cluster (Phase B) will skip un-embedded
+    // rows until the worker catches up.
+    //
+    // Emitted AFTER the row insert so Inngest can never try to embed
+    // an evidence_id that doesn't exist yet. If this call throws
+    // (event key missing, Inngest down), the tx rolls back and the
+    // caller sees the failure — better than leaving a dangling row.
+    await inngest.send({
+      name: EVENT_EMBED_REQUESTED,
+      data: { accountId: ctx.accountId, evidenceId: row.id },
     });
   }
 

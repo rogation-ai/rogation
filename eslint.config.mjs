@@ -51,6 +51,7 @@ const eslintConfig = [
       "app/api/webhooks/**",
       "app/api/health/**",
       "lib/account/**",
+      "lib/inngest/**",
       "scripts/**",
     ],
     rules: {
