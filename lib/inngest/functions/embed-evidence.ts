@@ -89,7 +89,10 @@ export const embedEvidence = inngest.createFunction(
     // OpenAI's embeddings endpoint allows ~3k req/min on our tier.
     // 10 concurrent workers is safe and keeps batch uploads moving
     // without a burst that could starve other API traffic.
-    concurrency: { limit: 10 },
+    // Inngest's free tier caps per-function concurrency at 5. Bump
+    // when we move to a paid plan — the worker itself is fine at
+    // higher fan-out; only OpenAI rate limits matter upstream.
+    concurrency: { limit: 5 },
     // Retry transient provider failures. Inngest backs off
     // exponentially between attempts.
     retries: 4,
