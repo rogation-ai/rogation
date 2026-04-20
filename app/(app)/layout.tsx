@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
+import { UpgradeButton } from "@/components/app/UpgradeButton";
 
 /*
   Signed-in app shell. All feature screens (Evidence library, Insights,
@@ -54,7 +55,10 @@ export default function AppLayout({
             ))}
           </nav>
         </div>
-        <UserButton />
+        <div className="flex items-center gap-3">
+          <UpgradeButton />
+          <UserButton />
+        </div>
       </header>
       <div className="mx-auto max-w-6xl px-6 py-10">{children}</div>
     </div>
