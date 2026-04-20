@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { truncate, formatDate } from "@/app/(app)/evidence/page";
+import { truncate, formatDate } from "@/app/(app)/evidence/format";
 
 describe("truncate", () => {
   it("returns the original string when under the cap", () => {
