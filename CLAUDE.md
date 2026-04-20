@@ -377,10 +377,10 @@ Every data row belongs to an account. Three layers enforce this:
 
 ## Deploy Configuration (configured by /setup-deploy)
 
-- Platform: Vercel (not yet linked — run `vercel link` from repo root to connect)
-- Production URL: TBD (set after first Vercel deploy — commonly `rogation.vercel.app` or a custom domain)
-- Staging / preview: Vercel PR previews are off for v1 — not used by `/land-and-deploy`
-- Deploy trigger: automatic on push to `main` once Vercel project is linked
+- Platform: Vercel (linked — project `sanxores-projects/rogation`)
+- Production URL: `https://rogation-sanxores-projects.vercel.app` (auto-alias — replace with custom domain once configured)
+- Staging / preview: Vercel PR previews are enabled by default. Protected by Vercel auth (401 to unauthenticated requests) — not reached by `/land-and-deploy` canary.
+- Deploy trigger: automatic on push to `main` (Vercel Git integration via linked project)
 - Deploy status: poll production URL `/api/health` until it returns 200 with the new commit SHA
 - Health check endpoint: `GET /api/health` → 200 `{ok:true, db:"up", version, commit, latencyMs}` or 503 `{ok:false, db:"down"}`. Returns 503 on DB outage so monitors can alarm. Source: `app/api/health/route.ts`.
 - Merge method: squash (GitHub repo default)
@@ -391,11 +391,8 @@ Every data row belongs to an account. Three layers enforce this:
 - Pre-merge: `bun run check` (typecheck + lint + build + test) — already runs in CI
 - Post-deploy verification: `curl -fs $PROD_URL/api/health` and assert `commit` matches the just-merged SHA
 
-### Before first deploy works end-to-end
+### Status + next checkpoint
 
-1. `npm i -g vercel` and `vercel login`
-2. `vercel link` from repo root, pick the Vercel project (create it first at vercel.com if needed)
-3. In the Vercel dashboard: add every env var from `env.ts` (DATABASE_URL, CLERK_*, ANTHROPIC_API_KEY, OPENAI_API_KEY, STRIPE_*, LINEAR_*, INTEGRATION_ENCRYPTION_KEY, UPSTASH_*, SENTRY_*, LANGFUSE_*, POSTHOG_*)
-4. Push to `main` → Vercel auto-deploys → record the assigned URL here and in the Vercel project settings
-5. Verify: `curl -fs https://<your-url>/api/health` returns 200 with current commit SHA
-6. Then `/land-and-deploy` works end-to-end
+- Vercel env vars: all 11 required keys set in the Vercel dashboard (confirmed 2026-04-20)
+- First production deploy: pending PR #3 merge (prior attempts failed the Vercel "vulnerable Next.js" guard — fixed by the 15.1.0 → 15.5.15 bump in PR #3)
+- After PR #3 merges, verify the assigned production URL with `vercel ls` and update this section if Vercel assigns a different alias than the expected `rogation-sanxores-projects.vercel.app`
