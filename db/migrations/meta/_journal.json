@@ -29,6 +29,13 @@
       "when": 1776505300000,
       "tag": "0003_entity_feedback_unique",
       "breakpoints": false
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776505400000,
+      "tag": "0004_integration_state_config",
+      "breakpoints": false
     }
   ]
 }

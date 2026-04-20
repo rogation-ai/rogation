@@ -89,6 +89,30 @@ export const env = createEnv({
     */
     UPSTASH_REDIS_REST_URL: z.string().url().optional(),
     UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+
+    /*
+      Symmetric key for at-rest encryption of integration access tokens
+      (Linear, Notion, etc.) stored in integration_credential. 32 raw
+      bytes, base64-encoded — generate with `openssl rand -base64 32`.
+      AES-256-GCM via lib/crypto/envelope.ts.
+
+      Rotation path when we need it: add kek_version column reads + a
+      second-key fallback in decrypt(). For v1, one key is enough.
+    */
+    INTEGRATION_ENCRYPTION_KEY: z
+      .string()
+      .min(44)
+      .describe(
+        "Base64-encoded 32-byte key for AES-256-GCM of OAuth access tokens.",
+      ),
+
+    /*
+      Linear OAuth app credentials. Register at
+      https://linear.app/settings/api/applications/new. Scopes are
+      requested at authorize time (read, write, issues:create).
+    */
+    LINEAR_CLIENT_ID: z.string().min(1).optional(),
+    LINEAR_CLIENT_SECRET: z.string().min(1).optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -131,6 +155,9 @@ export const env = createEnv({
     STRIPE_PRICE_ID_PRO: process.env.STRIPE_PRICE_ID_PRO,
     UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    INTEGRATION_ENCRYPTION_KEY: process.env.INTEGRATION_ENCRYPTION_KEY,
+    LINEAR_CLIENT_ID: process.env.LINEAR_CLIENT_ID,
+    LINEAR_CLIENT_SECRET: process.env.LINEAR_CLIENT_SECRET,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,

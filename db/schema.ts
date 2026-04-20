@@ -565,12 +565,27 @@ export const integrationState = pgTable(
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     status: integrationStatusEnum("status").notNull().default("active"),
     lastError: text("last_error"),
+    // Per-provider knobs (Linear: default team; Notion: target DB;
+    // etc.). Narrowed in TS with provider-specific shapes at read time.
+    config: jsonb("config").$type<Record<string, unknown>>(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.provider] })],
 );
+
+export interface LinearIntegrationConfig {
+  workspaceId?: string;
+  workspaceName?: string;
+  defaultTeamId?: string;
+  defaultTeamName?: string;
+  defaultTeamKey?: string;
+  // Index signature makes this assignable to the column's jsonb
+  // Record<string, unknown> type without widening to plain records
+  // at every call site.
+  [k: string]: unknown;
+}
 
 /* --------------------------- TYPE INFERENCE ---------------------------- */
 

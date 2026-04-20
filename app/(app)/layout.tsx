@@ -16,6 +16,7 @@ const NAV = [
   { href: "/app", label: "Upload" },
   { href: "/insights", label: "Insights" },
   { href: "/build", label: "What to build" },
+  { href: "/settings/integrations", label: "Integrations" },
 ];
 
 export default function AppLayout({
