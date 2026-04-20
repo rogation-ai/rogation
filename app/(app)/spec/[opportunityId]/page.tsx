@@ -50,6 +50,11 @@ export default function SpecEditorPage({
 
   const utils = trpc.useUtils();
   const latest = trpc.specs.getLatest.useQuery({ opportunityId });
+  const me = trpc.account.me.useQuery();
+  const integrationsList = trpc.integrations.list.useQuery();
+  const pushLinear = trpc.specs.pushToLinear.useMutation({
+    onSuccess: () => utils.specs.getLatest.invalidate({ opportunityId }),
+  });
   const refinements = trpc.specs.refinements.useQuery(
     { opportunityId },
     { enabled: !!latest.data },
@@ -282,6 +287,14 @@ export default function SpecEditorPage({
               >
                 {downloading ? "Preparing…" : "Download .md"}
               </button>
+              <LinearPushBlock
+                spec={spec}
+                plan={me.data?.account.plan ?? "free"}
+                integrations={integrationsList.data ?? []}
+                isPushing={pushLinear.isPending}
+                pushError={pushLinear.error?.message ?? null}
+                onPush={() => pushLinear.mutate({ opportunityId })}
+              />
               <button
                 type="button"
                 onClick={() => startStream("generate")}
@@ -716,6 +729,142 @@ function Section({
       </h3>
       {children}
     </section>
+  );
+}
+
+/* ---------------------------- linear push ---------------------------- */
+
+interface LinearPushBlockProps {
+  spec: {
+    linearIssueUrl: string | null;
+    linearIssueIdentifier: string | null;
+  };
+  plan: "free" | "solo" | "pro";
+  integrations: Array<{
+    provider: "zendesk" | "posthog" | "canny" | "linear" | "notion";
+    connected: boolean;
+    status: "active" | "token_invalid" | "rate_limited" | "disabled";
+    config: Record<string, unknown> | null;
+  }>;
+  isPushing: boolean;
+  pushError: string | null;
+  onPush: () => void;
+}
+
+/*
+  Push-to-Linear CTA block. Picks one of five mutually exclusive
+  states, in order:
+
+    1. Already pushed      → "View in Linear →" link (keep URL + id).
+    2. Plan doesn't allow  → Upgrade CTA to /pricing.
+    3. Not connected       → "Connect Linear first →" link.
+    4. No default team     → "Pick a team →" link.
+    5. Ready to push       → solid "Push to Linear" button.
+
+  Error messages from the mutation surface inline below the button
+  so the user sees precisely why it failed (rate limit, token
+  revoked, etc.) without hunting through the network tab.
+*/
+function LinearPushBlock({
+  spec,
+  plan,
+  integrations,
+  isPushing,
+  pushError,
+  onPush,
+}: LinearPushBlockProps): React.JSX.Element {
+  if (spec.linearIssueUrl) {
+    return (
+      <a
+        href={spec.linearIssueUrl}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-primary)",
+        }}
+      >
+        View in Linear{spec.linearIssueIdentifier ? ` · ${spec.linearIssueIdentifier}` : ""} →
+      </a>
+    );
+  }
+
+  if (plan === "free") {
+    return (
+      <Link
+        href="/pricing"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Push to Linear · Upgrade to Solo →
+      </Link>
+    );
+  }
+
+  const linear = integrations.find((i) => i.provider === "linear");
+  if (!linear?.connected) {
+    return (
+      <Link
+        href="/settings/integrations"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Connect Linear first →
+      </Link>
+    );
+  }
+
+  const defaultTeamId =
+    typeof linear.config?.defaultTeamId === "string"
+      ? linear.config.defaultTeamId
+      : null;
+  const defaultTeamName =
+    typeof linear.config?.defaultTeamName === "string"
+      ? linear.config.defaultTeamName
+      : null;
+
+  if (!defaultTeamId) {
+    return (
+      <Link
+        href="/settings/integrations"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Pick a Linear team →
+      </Link>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onPush}
+        disabled={isPushing}
+        className="rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-60"
+        style={{
+          borderColor: "var(--color-brand-accent)",
+          color: "var(--color-brand-accent)",
+        }}
+      >
+        {isPushing ? "Pushing…" : `Push to Linear (${defaultTeamName ?? "team"})`}
+      </button>
+      {pushError ? (
+        <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+          {pushError}
+        </p>
+      ) : null}
+    </>
   );
 }
 

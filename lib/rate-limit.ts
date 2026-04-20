@@ -86,6 +86,19 @@ export const RATE_LIMIT_PRESETS = {
     requests: 120,
     window: "1 m",
   },
+  /**
+   * Push-spec-to-Linear. By accountId. Each call does a Linear
+   * GraphQL mutation AND writes our DB. 30/hour leaves plenty of
+   * slack for a PM legitimately pushing 10-20 specs in a session
+   * while stopping an accidental loop or a rogue script from
+   * hammering Linear's API (which would get us rate-limited by
+   * them with a fallout that affects every other tenant using
+   * the same integration).
+   */
+  "linear-push": {
+    requests: 30,
+    window: "1 h",
+  },
 } as const;
 
 export type RateLimitPreset = keyof typeof RATE_LIMIT_PRESETS;

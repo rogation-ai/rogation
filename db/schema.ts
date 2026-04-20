@@ -368,6 +368,13 @@ export const specs = pgTable(
       acceptanceTestable: boolean;
       llmNotes?: string;
     }>(),
+    // Linear push metadata. Populated when pushSpecToLinear succeeds.
+    // Cleared implicitly on regenerate (new version = new row with
+    // NULLs). Old versions retain their URL as audit.
+    linearIssueId: text("linear_issue_id"),
+    linearIssueIdentifier: text("linear_issue_identifier"),
+    linearIssueUrl: text("linear_issue_url"),
+    linearPushedAt: timestamp("linear_pushed_at", { withTimezone: true }),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

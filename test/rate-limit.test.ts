@@ -72,10 +72,11 @@ describe("rate-limit module (no Upstash configured)", () => {
     }
   });
 
-  it("PRESETS table: has exactly the four surfaces the eng review + critical gaps called out", async () => {
+  it("PRESETS table: covers every rate-limited surface in the app", async () => {
     const { RATE_LIMIT_PRESETS } = await import("@/lib/rate-limit");
     expect(Object.keys(RATE_LIMIT_PRESETS).sort()).toEqual([
       "checkout-create",
+      "linear-push",
       "share-link",
       "spec-chat",
       "webhook",

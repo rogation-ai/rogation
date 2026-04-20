@@ -529,6 +529,9 @@ export interface SpecRow {
   ir: SpecIR;
   markdown: string | null;
   updatedAt: Date;
+  linearIssueUrl: string | null;
+  linearIssueIdentifier: string | null;
+  linearPushedAt: Date | null;
 }
 
 export async function getLatestSpec(
@@ -545,6 +548,9 @@ export async function getLatestSpec(
       ir: specs.contentIr,
       markdown: specs.contentMd,
       updatedAt: specs.updatedAt,
+      linearIssueUrl: specs.linearIssueUrl,
+      linearIssueIdentifier: specs.linearIssueIdentifier,
+      linearPushedAt: specs.linearPushedAt,
     })
     .from(specs)
     .where(
