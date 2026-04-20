@@ -98,7 +98,12 @@ export const integrationsRouter = router({
         await ctx.db
           .update(integrationState)
           .set({ status: "token_invalid", lastError: err.message })
-          .where(eq(integrationState.provider, "linear"));
+          .where(
+            and(
+              eq(integrationState.accountId, ctx.accountId),
+              eq(integrationState.provider, "linear"),
+            ),
+          );
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Linear token was revoked. Reconnect to continue.",
@@ -120,7 +125,12 @@ export const integrationsRouter = router({
       const [existing] = await ctx.db
         .select({ config: integrationState.config })
         .from(integrationState)
-        .where(eq(integrationState.provider, "linear"))
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, "linear"),
+          ),
+        )
         .limit(1);
 
       if (!existing) {
@@ -141,7 +151,12 @@ export const integrationsRouter = router({
       await ctx.db
         .update(integrationState)
         .set({ config: next, updatedAt: new Date() })
-        .where(eq(integrationState.provider, "linear"));
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, "linear"),
+          ),
+        );
 
       return { ok: true };
     }),
@@ -166,7 +181,12 @@ export const integrationsRouter = router({
           lastError: null,
           updatedAt: new Date(),
         })
-        .where(eq(integrationState.provider, input.provider));
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, input.provider),
+          ),
+        );
 
       return { ok: true };
     }),

@@ -62,12 +62,22 @@ export async function GET(req: NextRequest) {
       return { ok: false as const, reason: "account_mismatch" };
     }
 
-    const token = await exchangeCodeForToken(code);
-
-    // One round-trip to learn which workspace the PM just connected —
-    // cached in integration_state.config so the settings UI doesn't
-    // re-query Linear for display text on every page load.
-    const viewer = await fetchViewer(token.access_token);
+    // Wrap the outbound Linear calls so a provider-side error (network
+    // drop, 400 on a stale code, Linear outage) lands the user on the
+    // settings error banner instead of a raw Next.js 500. Review Pass 9
+    // INFO #1.
+    let token;
+    let viewer;
+    try {
+      token = await exchangeCodeForToken(code);
+      // One round-trip to learn which workspace the PM just connected —
+      // cached in integration_state.config so the settings UI doesn't
+      // re-query Linear for display text on every page load.
+      viewer = await fetchViewer(token.access_token);
+    } catch (err) {
+      console.warn("Linear OAuth callback: provider call failed:", err);
+      return { ok: false as const, reason: "exchange_failed" };
+    }
     const config: LinearIntegrationConfig = {
       workspaceId: viewer.workspace.id,
       workspaceName: viewer.workspace.name,

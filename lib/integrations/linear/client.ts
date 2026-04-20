@@ -82,9 +82,16 @@ export async function fetchViewer(accessToken: string): Promise<LinearViewer> {
     }
   `;
   const data = await linearRequest<{
-    organization: { id: string; name: string };
+    organization: { id: string; name: string } | null;
     teams: { nodes: LinearTeam[] };
   }>(accessToken, query);
+  // A revoked-at-org-level token can return `organization: null` with
+  // a 200 status (we already checked GraphQL-level errors upstream).
+  // Surface it as a LinearApiError so the caller's 401/401-like
+  // handling path fires instead of a TypeError on null deref.
+  if (!data.organization) {
+    throw new LinearApiError("Linear workspace unavailable", 401);
+  }
   return {
     workspace: data.organization,
     teams: data.teams.nodes,

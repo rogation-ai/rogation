@@ -68,35 +68,80 @@ export async function provisionAccountForClerkUser(
   // Transactional create: account first, then user, then set owner.
   // If any step fails the whole thing rolls back, so we never leave
   // an orphan account with no owner (or a user with no account).
-  return db.transaction(async (tx) => {
-    const [account] = await tx
-      .insert(accounts)
-      .values({ plan: "free" })
-      .returning({ id: accounts.id, plan: accounts.plan });
+  //
+  // Race handling: two concurrent first-requests for the same Clerk
+  // user (e.g. page opened in two tabs during signup) both skip the
+  // dedup SELECT above and both enter this tx. The loser hits the
+  // UNIQUE index on user.clerk_user_id and Postgres raises 23505.
+  // Catch it, re-SELECT the winner's row, and return `created: false`
+  // so the loser sees the same UX as any other idempotent retry
+  // instead of a 500. Pre-landing review finding, 2026-04-20.
+  try {
+    return await db.transaction(async (tx) => {
+      const [account] = await tx
+        .insert(accounts)
+        .values({ plan: "free" })
+        .returning({ id: accounts.id, plan: accounts.plan });
 
-    if (!account) throw new Error("Failed to create account row");
+      if (!account) throw new Error("Failed to create account row");
 
-    const [user] = await tx
-      .insert(users)
-      .values({
+      const [user] = await tx
+        .insert(users)
+        .values({
+          accountId: account.id,
+          clerkUserId: input.clerkUserId,
+          email: input.email,
+        })
+        .returning({ id: users.id });
+
+      if (!user) throw new Error("Failed to create user row");
+
+      await tx
+        .update(accounts)
+        .set({ ownerUserId: user.id })
+        .where(eq(accounts.id, account.id));
+
+      return {
+        userId: user.id,
         accountId: account.id,
-        clerkUserId: input.clerkUserId,
-        email: input.email,
-      })
-      .returning({ id: users.id });
+        plan: account.plan,
+        created: true,
+      };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      // Another caller won the race. Re-SELECT to return their row.
+      const [winner] = await db
+        .select({
+          userId: users.id,
+          accountId: users.accountId,
+          plan: accounts.plan,
+        })
+        .from(users)
+        .innerJoin(accounts, eq(users.accountId, accounts.id))
+        .where(eq(users.clerkUserId, input.clerkUserId))
+        .limit(1);
 
-    if (!user) throw new Error("Failed to create user row");
+      if (winner) {
+        return {
+          userId: winner.userId,
+          accountId: winner.accountId,
+          plan: winner.plan,
+          created: false,
+        };
+      }
+    }
+    throw err;
+  }
+}
 
-    await tx
-      .update(accounts)
-      .set({ ownerUserId: user.id })
-      .where(eq(accounts.id, account.id));
-
-    return {
-      userId: user.id,
-      accountId: account.id,
-      plan: account.plan,
-      created: true,
-    };
-  });
+/*
+  Postgres unique_violation is SQLSTATE 23505. The postgres-js driver
+  exposes it as `.code` on the thrown error; drizzle just rethrows.
+  Narrow defensively so we don't swallow unrelated errors.
+*/
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const code = (err as { code?: unknown }).code;
+  return code === "23505";
 }

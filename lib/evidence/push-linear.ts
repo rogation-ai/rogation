@@ -47,6 +47,7 @@ export interface PushSpecCtx {
 
 export type PushSpecError =
   | "spec-not-found"
+  | "empty-spec"
   | "not-connected"
   | "no-default-team"
   | "token-invalid"
@@ -140,6 +141,18 @@ export async function pushSpecToLinear(
   const title = (ir.title && ir.title.trim()) || spec.oppTitle;
   const description = spec.contentMd ?? "";
 
+  // Short-circuit on a spec that would produce an empty Linear issue
+  // BEFORE calling the provider. Saves a rate-limit slot + gives the
+  // PM a clear error ("Spec has no title yet") instead of a generic
+  // linear-api-error bubbling up from Linear's GraphQL.
+  if (!title.trim()) {
+    return {
+      ok: false,
+      error: "empty-spec",
+      message: "Spec has no title yet. Regenerate before pushing.",
+    };
+  }
+
   // 5. Call Linear. 401 → mark token_invalid + surface to caller.
   let issue;
   try {
@@ -154,7 +167,12 @@ export async function pushSpecToLinear(
       await ctx.db
         .update(integrationState)
         .set({ status: "token_invalid", lastError: err.message })
-        .where(eq(integrationState.provider, "linear"));
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, "linear"),
+          ),
+        );
       return {
         ok: false,
         error: "token-invalid",

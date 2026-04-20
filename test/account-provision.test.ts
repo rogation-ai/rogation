@@ -90,24 +90,27 @@ describe.skipIf(!hasTestDb)("provisionAccountForClerkUser (DB-backed)", () => {
     expect(u?.email).toBe("email-probe@test.dev");
   });
 
-  it("concurrent racing calls for the same Clerk user don't duplicate", async () => {
+  it("concurrent racing calls for the same Clerk user both return the same row", async () => {
     // Fire two provision calls at the same time for the same Clerk
     // id. The UNIQUE index on user.clerk_user_id guarantees only one
-    // wins the insert; the loser gets a duplicate-key error which
-    // SHOULD be handled gracefully — but v1's helper doesn't catch
-    // that explicitly, so this test also documents the current
-    // behavior: one call succeeds, the other may throw. We assert
-    // at MOST one row exists either way.
+    // wins the insert; the loser hits SQLSTATE 23505 which the
+    // helper now catches + re-SELECTs inside. Both callers see a
+    // clean result pointing at the winner's row. This eliminates the
+    // user-visible 500 on a two-tab signup. Pre-landing review
+    // finding, 2026-04-20.
     const clerkId = "user_race";
-    const results = await Promise.allSettled([
+    const [a, b] = await Promise.all([
       provisionAccountForClerkUser({ clerkUserId: clerkId, email: "a@t.dev" }),
       provisionAccountForClerkUser({ clerkUserId: clerkId, email: "a@t.dev" }),
     ]);
 
-    const fulfilled = results.filter((r) => r.status === "fulfilled").length;
-    expect(fulfilled).toBeGreaterThanOrEqual(1);
+    // Both fulfilled, both point at the same user + account.
+    expect(a.userId).toBe(b.userId);
+    expect(a.accountId).toBe(b.accountId);
+    // Exactly one of them did the insert; the other dedup'd.
+    expect([a.created, b.created].sort()).toEqual([false, true]);
 
-    // No duplicates in the DB, regardless of which call won.
+    // Exactly one DB row.
     const rows = await handle.db.execute(
       sql`SELECT count(*)::int AS n FROM "user" WHERE clerk_user_id = ${clerkId}`,
     );
