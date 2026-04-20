@@ -56,18 +56,3 @@ Rotating that one env var invalidates every stored credential AND every in-fligh
 **How to close:** Add `INTEGRATION_STATE_SIGNING_KEY` to `env.ts` (optional, falls back to `INTEGRATION_ENCRYPTION_KEY` so existing deploys don't break). Update `lib/integrations/state.ts > keyBytes()` to prefer the new var when set. Document the rotation pattern in CLAUDE.md.
 
 **Blocked by:** First real key rotation need. Probably ≥6 months out.
-
----
-
-## Re-enable Clerk bot protection + rotate leaked dev keys (P0)
-
-**What:** Two security hygiene items from the /qa session on 2026-04-18:
-
-1. Clerk Turnstile bot protection was disabled to unblock headless QA signups. Must be re-enabled before any production traffic hits the app.
-2. During early /ship setup, real Anthropic + OpenAI + Clerk dev keys were pasted into `.env.example` on disk (caught + reverted before commit, never pushed). They still lived in local shell history, so the defensive move is to rotate them.
-
-**Why:** P0 because either item on its own would be a production security incident. Both are trivially closeable.
-
-**How to close:** Flip the Clerk dashboard toggle back on. For each of the three providers, rotate keys in the provider dashboard and update `.env.local` + production secrets.
-
-**Blocked by:** Nothing. Do before the first public signup.

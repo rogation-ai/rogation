@@ -42,7 +42,16 @@ function readMigrations(): Array<{ tag: string; sql: string }> {
     .sort()
     .map((f) => ({
       tag: f.replace(/\.sql$/, ""),
-      sql: readFileSync(join(MIGRATIONS_DIR, f), "utf8"),
+      // drizzle-kit emits `"public"."foo"` for types + some refs. For
+      // per-schema test isolation we want everything unqualified so it
+      // lands in the test schema (search_path[0]) and dies with
+      // `DROP SCHEMA CASCADE` on teardown. Without this strip, CREATE
+      // TYPE survives across test files and the second run hits
+      // `type "..." already exists`.
+      sql: readFileSync(join(MIGRATIONS_DIR, f), "utf8").replace(
+        /"public"\./g,
+        "",
+      ),
     }));
 }
 
@@ -56,17 +65,21 @@ export async function setupTestDb(
   // Unique schema per test run + file label, safe for concurrent runs.
   const schemaName = `test_${label.replace(/[^a-z0-9_]/gi, "_")}_${Date.now().toString(36)}`;
 
-  const conn = postgres(TEST_DATABASE_URL, { prepare: false, max: 2 });
+  // Bootstrap connection (default search_path) creates the schema.
+  const boot = postgres(TEST_DATABASE_URL, { prepare: false, max: 1 });
+  await boot.unsafe(`CREATE SCHEMA "${schemaName}"`);
+  await boot.end({ timeout: 2 });
 
-  // Create the schema and set the search_path for this connection so
-  // all unqualified DDL from the migration lands inside it. Pgvector
-  // types still resolve because the `vector` extension is in the
-  // `public` schema (where CREATE EXTENSION put it) and search_path
-  // falls through to public.
-  await conn.unsafe(`CREATE SCHEMA "${schemaName}"`);
-  await conn.unsafe(
-    `SET search_path TO "${schemaName}", public`,
-  );
+  // Main connection pool: every connection gets search_path set on
+  // startup so unqualified DDL + transaction queries resolve inside
+  // the test schema even when the pool opens a second connection
+  // mid-test. Pgvector still resolves because we fall through to
+  // public where CREATE EXTENSION put it.
+  const conn = postgres(TEST_DATABASE_URL, {
+    prepare: false,
+    max: 2,
+    connection: { search_path: `"${schemaName}",public` },
+  });
 
   // Apply migrations in order. Each migration file is parsed at
   // drizzle-kit's --> statement-breakpoint markers so we can run each
