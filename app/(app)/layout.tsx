@@ -15,6 +15,7 @@ import { UpgradeButton } from "@/components/app/UpgradeButton";
 
 const NAV = [
   { href: "/app", label: "Upload" },
+  { href: "/evidence", label: "Evidence" },
   { href: "/insights", label: "Insights" },
   { href: "/build", label: "What to build" },
   { href: "/settings/integrations", label: "Integrations" },

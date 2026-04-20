@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.4.0.0] - 2026-04-20
+
+Evidence library. PMs can finally see everything they've pasted and take it back.
+
+### Added
+
+- **`/evidence` route — the evidence library.** Lists every piece of evidence on the account newest-first with a source icon, segment tag, 240-char preview, and a per-row Delete button. Delete prompts first and warns that clusters citing this row will look thinner after the next re-cluster. Added to the signed-in nav next to Upload. Capped at 100 most recent; pagination lands when a real account breaks that.
+
 ## [0.3.0.0] - 2026-04-20
 
 Pricing page. First real path from "try it free" to "pay us money" without a support-channel hand-off.
