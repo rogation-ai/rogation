@@ -20,6 +20,16 @@ Pricing page. First real path from "try it free" to "pay us money" without a sup
 
 - **Public `/pricing` page.** Three tier cards (Free / Solo / Pro) with feature lists + live CTAs. Signed-out visitors land in sign-up (with `?upgrade=<tier>` carried through). Signed-in free users get an Upgrade button that kicks off `trpc.billing.createCheckout` and redirects to Stripe Checkout. Existing paid subscribers get a Manage billing button that opens the Stripe Customer Portal. Current plan is marked so PMs don't buy a second subscription by accident. Wired the "Pricing" link on the landing page (was a dead `#` anchor).
 
+## [0.5.0.0] - 2026-04-20
+
+Async evidence embedding. Batch uploads no longer spend the request budget on OpenAI round-trips.
+
+### Added
+
+- **Inngest worker for evidence embedding.** `lib/inngest/functions/embed-evidence.ts` consumes `evidence/embed.requested` events and inserts the 1536-d vector into `evidence_embedding` with retry + backoff on provider failures. Concurrency capped at 10 so a 20-file batch doesn't thunder-herd OpenAI. The Next.js webhook lives at `POST /api/inngest` (signed by Inngest SDK against `INNGEST_SIGNING_KEY`).
+- **`ingestEvidence` embed modes.** New `embed: "sync" | "defer"` option. Paste stays sync (one row, ~200ms). File uploads (`POST /api/evidence/upload`) now defer — the evidence row is inserted, dedup + plan-meter reflect it instantly, and the worker fills in the vector out of band. A 20-file import previously burned ~4s on OpenAI calls inside the request; now it's ~0ms.
+- **`INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` env vars.** Both optional. In dev the SDK talks to the local Inngest dev server (`npx inngest-cli dev`); production sets both and the webhook verifies every call.
+
 ## [0.2.0.0] - 2026-04-20
 
 P1 hardening sprint. Finishes the shared UI inventory, tightens every rough edge on the Linear integration we flagged during v0.1 adversarial review, and fixes the "version: unknown" field the health probe was returning from Vercel.

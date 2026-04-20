@@ -79,6 +79,10 @@ export async function POST(req: Request): Promise<NextResponse> {
             content: parsed.text,
             sourceType: "upload_text",
             sourceRef: `upload:${file.name}`,
+            // Batch uploads offload embedding to Inngest. A 20-file
+            // import would otherwise spend 20 × ~200ms = 4s on
+            // OpenAI calls inside this request.
+            embed: "defer",
           },
         );
         results.push({ filename: file.name, id, deduped });
