@@ -25,7 +25,7 @@ export default async function Home() {
           style={{ color: "var(--color-text-secondary)" }}
         >
           <a href="#">Product</a>
-          <a href="#">Pricing</a>
+          <Link href="/pricing">Pricing</Link>
           <a href="#">Docs</a>
           <Link
             href="/sign-in"
