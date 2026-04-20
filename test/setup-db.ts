@@ -65,19 +65,25 @@ export async function setupTestDb(
   // Unique schema per test run + file label, safe for concurrent runs.
   const schemaName = `test_${label.replace(/[^a-z0-9_]/gi, "_")}_${Date.now().toString(36)}`;
 
-  // Bootstrap connection (default search_path) creates the schema.
+  // Bootstrap: create the schema + ensure extensions exist in public.
+  // Installing vector/pgcrypto in public (not the test schema) means
+  // parallel test files don't race each other — the migration's
+  // CREATE EXTENSION IF NOT EXISTS is a no-op, but the `vector` type
+  // is always resolvable via search_path fallback to public.
   const boot = postgres(TEST_DATABASE_URL, { prepare: false, max: 1 });
+  await boot.unsafe(`CREATE EXTENSION IF NOT EXISTS vector SCHEMA public`);
+  await boot.unsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public`);
   await boot.unsafe(`CREATE SCHEMA "${schemaName}"`);
   await boot.end({ timeout: 2 });
 
-  // Main connection pool: every connection gets search_path set on
-  // startup so unqualified DDL + transaction queries resolve inside
-  // the test schema even when the pool opens a second connection
-  // mid-test. Pgvector still resolves because we fall through to
-  // public where CREATE EXTENSION put it.
+  // Main connection: max=1 so every query (including drizzle
+  // transactions) runs on the same connection where we set
+  // search_path. Tests within a single file are sequential — no
+  // parallelism benefit from a larger pool, and max>1 tripped
+  // postgres.js's UNSAFE_TRANSACTION guard for drizzle transactions.
   const conn = postgres(TEST_DATABASE_URL, {
     prepare: false,
-    max: 2,
+    max: 1,
     connection: { search_path: `"${schemaName}",public` },
   });
 
