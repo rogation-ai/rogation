@@ -32,14 +32,25 @@ async function linearRequest<T>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<T> {
-  const res = await fetch(LINEAR_GRAPHQL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(LINEAR_GRAPHQL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ query, variables }),
+      // Hard cap so a hung provider doesn't pin a serverless invocation.
+      // 10s covers p99 Linear GraphQL latency with plenty of headroom.
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new LinearApiError("Linear request timed out after 10s", 504);
+    }
+    throw err;
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new LinearApiError(
@@ -49,9 +60,15 @@ async function linearRequest<T>(
   }
   const json = (await res.json()) as GqlResponse<T>;
   if (json.errors?.length) {
+    // Linear returns HTTP 200 with a GraphQL error envelope on revoked
+    // tokens. Detect AUTHENTICATION_ERROR via extensions.type so callers
+    // take the reconnect path instead of showing a generic failure.
+    const isAuth = json.errors.some(
+      (e) => e.extensions?.type === "AUTHENTICATION_ERROR",
+    );
     throw new LinearApiError(
       `Linear GraphQL: ${json.errors.map((e) => e.message).join("; ")}`,
-      200,
+      isAuth ? 401 : 200,
     );
   }
   if (!json.data) throw new LinearApiError("Linear empty response", 200);

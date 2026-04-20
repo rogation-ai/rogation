@@ -114,13 +114,7 @@ export const integrationsRouter = router({
   }),
 
   setLinearDefaultTeam: authedProcedure
-    .input(
-      z.object({
-        teamId: z.string().min(1),
-        teamName: z.string().min(1),
-        teamKey: z.string().min(1),
-      }),
-    )
+    .input(z.object({ teamId: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const [existing] = await ctx.db
         .select({ config: integrationState.config })
@@ -140,12 +134,66 @@ export const integrationsRouter = router({
         });
       }
 
+      // Validate teamId against the live team list. A client could
+      // otherwise POST a teamId from a different workspace (or a
+      // deleted team) and we'd happily persist it, setting the PM up
+      // for a 404 on their next push. Re-fetching also gives us the
+      // canonical name/key, so the client doesn't control display
+      // strings at all.
+      const [cred] = await ctx.db
+        .select({
+          ciphertext: integrationCredentials.ciphertext,
+          nonce: integrationCredentials.nonce,
+        })
+        .from(integrationCredentials)
+        .where(eq(integrationCredentials.provider, "linear"))
+        .limit(1);
+
+      if (!cred) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Linear is not connected.",
+        });
+      }
+
+      let liveTeams;
+      try {
+        const token = decrypt(cred);
+        const viewer = await fetchViewer(token);
+        liveTeams = viewer.teams;
+      } catch (err) {
+        if (err instanceof LinearApiError && err.status === 401) {
+          await ctx.db
+            .update(integrationState)
+            .set({ status: "token_invalid", lastError: err.message })
+            .where(
+              and(
+                eq(integrationState.accountId, ctx.accountId),
+                eq(integrationState.provider, "linear"),
+              ),
+            );
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Linear token was revoked. Reconnect to continue.",
+          });
+        }
+        throw err;
+      }
+
+      const team = liveTeams.find((t) => t.id === input.teamId);
+      if (!team) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That team no longer exists in your Linear workspace.",
+        });
+      }
+
       const current = isLinearConfig(existing.config) ? existing.config : {};
       const next: LinearIntegrationConfig = {
         ...current,
-        defaultTeamId: input.teamId,
-        defaultTeamName: input.teamName,
-        defaultTeamKey: input.teamKey,
+        defaultTeamId: team.id,
+        defaultTeamName: team.name,
+        defaultTeamKey: team.key,
       };
 
       await ctx.db
