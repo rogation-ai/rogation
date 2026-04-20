@@ -3,8 +3,10 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 /*
   Clerk middleware. Runs on every non-static request.
 
-  Public routes: landing, pricing, docs, public share links, and the
-  Clerk webhook endpoint (which authenticates via signed-header, not session).
+  Public routes: landing, pricing, docs, public share links, and
+  signed-header endpoints (Clerk / Stripe webhooks, Inngest serve
+  handler). Signed requests are the trust boundary — no Clerk session
+  can exist on those calls.
 
   Every other route requires a valid Clerk session. Unauthenticated requests
   get redirected to the Clerk-hosted sign-in page (or a local one later).
@@ -20,6 +22,8 @@ const isPublicRoute = createRouteMatcher([
   "/s/(.*)", // view-only public share links (rate-limited in the handler)
   "/api/health", // deploy + uptime probe; no auth, no account context
   "/api/webhooks/(.*)",
+  "/api/inngest(.*)", // Inngest serve handler; verifies its own signature via INNGEST_SIGNING_KEY
+
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
