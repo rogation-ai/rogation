@@ -49,6 +49,7 @@ const eslintConfig = [
       "db/**",
       "server/trpc.ts",
       "app/api/webhooks/**",
+      "app/api/health/**",
       "lib/account/**",
       "scripts/**",
     ],
