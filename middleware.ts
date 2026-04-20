@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/pricing",
   "/docs(.*)",
   "/s/(.*)", // view-only public share links (rate-limited in the handler)
+  "/api/health", // deploy + uptime probe; no auth, no account context
   "/api/webhooks/(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
