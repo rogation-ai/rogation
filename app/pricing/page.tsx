@@ -200,7 +200,15 @@ export default function PricingPage(): React.JSX.Element {
       </div>
 
       <p
-        className="mt-16 text-xs uppercase tracking-widest"
+        className="mt-12 text-center text-sm"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        No contract. Cancel anytime from the billing portal. Paid plans
+        bill monthly through Stripe.
+      </p>
+
+      <p
+        className="mt-16 text-xs"
         style={{ color: "var(--color-text-tertiary)" }}
       >
         Test mode. Use card 4242 4242 4242 4242 with any future expiry + CVC.
@@ -261,6 +269,21 @@ function PrimaryCta({
     return (
       <CtaButton variant="secondary" onClick={onPortal} disabled={isPending}>
         {isPending ? "Opening…" : "Downgrade"}
+      </CtaButton>
+    );
+  }
+
+  // Direction-aware copy: a Pro user looking at the Solo card is
+  // downgrading, not upgrading. Silent "Upgrade to Solo" when you're
+  // on Pro is the kind of bug that breaks trust.
+  const rank = { free: 0, solo: 1, pro: 2 } as const;
+  const isDowngrade =
+    currentPlan !== null && rank[tier.id] < rank[currentPlan];
+
+  if (isDowngrade) {
+    return (
+      <CtaButton variant="secondary" onClick={onPortal} disabled={isPending}>
+        {isPending ? "Opening…" : `Downgrade to ${tier.name}`}
       </CtaButton>
     );
   }
