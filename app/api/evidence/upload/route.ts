@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import { TRPCError } from "@trpc/server";
-import { ingestEvidence } from "@/lib/evidence/ingest";
-import { parseTextFile } from "@/lib/evidence/parsers/text";
+import { ingestEvidence, type EvidenceSourceType } from "@/lib/evidence/ingest";
+import { parseEvidenceFile } from "@/lib/evidence/parsers";
 import { splitIntoBlocks } from "@/lib/evidence/split-blocks";
+
+function sourceTypeFor(mimeType: string): EvidenceSourceType {
+  if (mimeType === "application/pdf") return "upload_pdf";
+  if (mimeType === "text/vtt") return "upload_transcript";
+  if (mimeType === "text/csv" || mimeType === "application/csv") {
+    return "upload_csv";
+  }
+  return "upload_text";
+}
 import { withAuthedAccountTx } from "@/server/auth";
 
 /*
@@ -76,11 +85,17 @@ export async function POST(req: Request): Promise<NextResponse> {
     for (const file of files) {
       if (capHit) break;
 
-      const parsed = await parseTextFile(file);
+      const parsed = await parseEvidenceFile(file);
       if (!parsed.ok) {
         results.push({ filename: file.name, error: parsed.detail });
         continue;
       }
+
+      // Pick a typed sourceType from the parser's mimeType so the
+      // Evidence library can render the right icon and future filters
+      // can scope by format. Unknown text formats fall back to
+      // upload_text.
+      const sourceType = sourceTypeFor(parsed.mimeType);
 
       // When splitting is enabled and the file parsed to > 1 block,
       // ingest each block as a separate evidence row. A file with no
@@ -112,7 +127,7 @@ export async function POST(req: Request): Promise<NextResponse> {
             { db: ctx.db, accountId: ctx.accountId, plan: ctx.plan },
             {
               content: block.text,
-              sourceType: "upload_text",
+              sourceType,
               sourceRef,
               // Batch uploads offload embedding to Inngest. A 20-file
               // import (or one file split into 20 blocks) would
