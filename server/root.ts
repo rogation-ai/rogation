@@ -5,12 +5,12 @@ import { feedbackRouter } from "@/server/routers/feedback";
 import { insightsRouter } from "@/server/routers/insights";
 import { integrationsRouter } from "@/server/routers/integrations";
 import { opportunitiesRouter } from "@/server/routers/opportunities";
+import { outcomesRouter } from "@/server/routers/outcomes";
 import { specsRouter } from "@/server/routers/specs";
 import { router } from "@/server/trpc";
 
 /*
-  Root tRPC router. Feature routers (outcomes, integrations) mount
-  here as they land.
+  Root tRPC router. Feature routers mount here.
 */
 export const appRouter = router({
   account: accountRouter,
@@ -20,6 +20,7 @@ export const appRouter = router({
   insights: insightsRouter,
   integrations: integrationsRouter,
   opportunities: opportunitiesRouter,
+  outcomes: outcomesRouter,
   specs: specsRouter,
 });
 
