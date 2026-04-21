@@ -4,6 +4,22 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.7.0.0] - 2026-04-21
+
+Upload the file formats PMs actually have. Research PDFs, Zoom transcripts, Zendesk CSV exports all work now.
+
+### Added
+
+- **PDF parser.** Drop a user-research report, interview transcript, or internal PRD directly on the dropzone. `pdf-parse` extracts the text layer; scanned image-only PDFs return a clear "run OCR first" error instead of silently producing empty evidence. Password-protected PDFs surface a typed `parse_failed` instead of a 500.
+- **WebVTT parser.** Zoom, Google Meet, and Teams transcript exports land as first-class evidence. Speaker tags (`<v Alice>`) become `Alice: …` prefixes so speaker attribution survives into the evidence corpus. Timing lines, NOTE/STYLE blocks, and inline styling are stripped.
+- **CSV parser.** Zendesk, Airtable, Google Sheets exports upload cleanly. Instead of dumping raw `col1,col2,...` blobs into the LLM, each row is reformatted as `Key: value\nKey: value` blocks separated by blank lines. Pairs perfectly with the split-blocks checkbox — a 20-row ticket export becomes 20 evidence rows. 500-row cap per file. TSV uses the same path.
+- **Parser dispatcher.** `lib/evidence/parsers/index.ts > parseEvidenceFile(file)` picks the right parser by extension or mime and returns a uniform `ParserResult`. The upload Route Handler no longer branches on format; every new format just adds a case to the dispatcher.
+- **Per-format sourceType.** Evidence rows are now tagged `upload_pdf`, `upload_transcript`, `upload_csv`, or `upload_text` based on the parser that produced them. Future library filters can scope by format without guessing.
+
+### Changed
+
+- **Upload dropzone accepts the new formats.** `accept=".pdf,.vtt,.csv,.tsv,..."` on the file input + `application/pdf` mime hint so OS file pickers show PDF files. Copy updated to `"Text, PDF, VTT, and CSV. 2 MB per file, 20 files per batch."` — no more "coming soon" placeholder.
+
 ## [0.6.0.0] - 2026-04-20
 
 Upload a file with 20 support tickets in it, get 20 evidence rows instead of one blob.
