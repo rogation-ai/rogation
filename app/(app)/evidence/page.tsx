@@ -7,6 +7,7 @@ import { SourceIcon, sourceLabel, type SourceType } from "@/components/ui/Source
 import { SegmentTag } from "@/components/ui/SegmentTag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
+import { toast } from "sonner";
 import { truncate, formatDate } from "./format";
 
 /*
@@ -34,9 +35,14 @@ export default function EvidenceLibraryPage(): React.JSX.Element {
       utils.evidence.list.invalidate();
       utils.evidence.count.invalidate();
       utils.account.me.invalidate();
+      toast.success("Evidence deleted", {
+        description:
+          "Clusters citing this row will look thinner after the next refresh.",
+      });
     },
     onError: (err) => {
-      alert(err.message);
+      // Was an alert(); those block the thread and look sloppy.
+      toast.error("Couldn't delete evidence", { description: err.message });
       setPendingDeleteId(null);
     },
   });
@@ -127,9 +133,13 @@ export default function EvidenceLibraryPage(): React.JSX.Element {
                 <button
                   type="button"
                   onClick={() => {
+                    // Load-bearing warning: PMs delete "duplicates"
+                    // without realising the row is anchoring 3 cluster
+                    // quotes. Keep this blunt until we surface a real
+                    // citation count from the server.
                     if (
                       !confirm(
-                        "Delete this piece of evidence? Any clusters that cited it will no longer be supported by this quote on the next re-cluster.",
+                        "Delete this evidence?\n\nAny clusters citing this quote will look thinner after the next Refresh clusters.",
                       )
                     ) {
                       return;
