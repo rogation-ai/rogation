@@ -39,6 +39,10 @@ interface UploadResponse {
 export default function AppHome(): React.JSX.Element {
   const me = trpc.account.me.useQuery();
   const evCount = trpc.evidence.count.useQuery();
+  // Cluster existence drives the stepper's "First insight" state. A
+  // returning user with clusters shouldn't see the stepper claim they
+  // still need to run their first clustering pass.
+  const clusters = trpc.insights.list.useQuery();
   const utils = trpc.useUtils();
   const paste = trpc.evidence.paste.useMutation({
     onSuccess: () => {
@@ -69,8 +73,13 @@ export default function AppHome(): React.JSX.Element {
   );
 
   const count = evCount.data?.count ?? 0;
-  const onboardingStep: "upload" | "cluster" =
-    count < THIN_CORPUS_THRESHOLD ? "upload" : "cluster";
+  const clusterCount = clusters.data?.length ?? 0;
+  const onboardingStep: "upload" | "cluster" | "done" =
+    clusterCount > 0
+      ? "done"
+      : count < THIN_CORPUS_THRESHOLD
+        ? "upload"
+        : "cluster";
   const remaining = Math.max(THIN_CORPUS_THRESHOLD - count, 0);
 
   useEffect(() => {
@@ -141,21 +150,29 @@ export default function AppHome(): React.JSX.Element {
     );
   }
 
+  // Hide the onboarding stepper entirely for returning users. Once
+  // they've produced a cluster, the stepper is pure noise — and a
+  // stepper that says "First insight: upcoming" when the user has
+  // 7 clusters is worse than no stepper at all.
+  const showStepper = onboardingStep !== "done";
+
   return (
     <div className="flex flex-col items-center gap-12">
-      <NumberedStepper
-        steps={[
-          {
-            label: "Upload",
-            state: onboardingStep === "upload" ? "current" : "completed",
-          },
-          {
-            label: "Cluster",
-            state: onboardingStep === "cluster" ? "current" : "upcoming",
-          },
-          { label: "First insight", state: "upcoming" },
-        ]}
-      />
+      {showStepper && (
+        <NumberedStepper
+          steps={[
+            {
+              label: "Upload",
+              state: onboardingStep === "upload" ? "current" : "completed",
+            },
+            {
+              label: "Cluster",
+              state: onboardingStep === "cluster" ? "current" : "upcoming",
+            },
+            { label: "First insight", state: "upcoming" },
+          ]}
+        />
+      )}
 
       <section className="w-full max-w-xl">
         <div
