@@ -208,7 +208,7 @@ export default function PricingPage(): React.JSX.Element {
       </p>
 
       <p
-        className="mt-16 text-xs uppercase tracking-widest"
+        className="mt-16 text-xs"
         style={{ color: "var(--color-text-tertiary)" }}
       >
         Test mode. Use card 4242 4242 4242 4242 with any future expiry + CVC.
