@@ -265,6 +265,21 @@ function PrimaryCta({
     );
   }
 
+  // Direction-aware copy: a Pro user looking at the Solo card is
+  // downgrading, not upgrading. Silent "Upgrade to Solo" when you're
+  // on Pro is the kind of bug that breaks trust.
+  const rank = { free: 0, solo: 1, pro: 2 } as const;
+  const isDowngrade =
+    currentPlan !== null && rank[tier.id] < rank[currentPlan];
+
+  if (isDowngrade) {
+    return (
+      <CtaButton variant="secondary" onClick={onPortal} disabled={isPending}>
+        {isPending ? "Opening…" : `Downgrade to ${tier.name}`}
+      </CtaButton>
+    );
+  }
+
   return (
     <CtaButton onClick={onCheckout} disabled={isPending}>
       {isPending ? "Redirecting…" : `Upgrade to ${tier.name}`}
