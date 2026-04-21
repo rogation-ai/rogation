@@ -38,6 +38,24 @@ function isLinearConfig(v: unknown): v is LinearIntegrationConfig {
 }
 
 export const integrationsRouter = router({
+  /*
+    Server-side feature flags: which providers actually have OAuth
+    credentials wired on this deployment. The settings UI reads this
+    BEFORE rendering a "Connect X" button so we never show an action
+    the user can't complete. Separate from list() because an account
+    with zero integration_state rows still needs to know "Connect Linear
+    is real" vs "Linear is coming soon."
+  */
+  providers: authedProcedure.query(async () => {
+    return {
+      linear: { configured: linearOauthConfigured() },
+      // When Notion/Zendesk/PostHog/Canny OAuth modules land, add them
+      // here. Each needs a helper like linearOauthConfigured() that
+      // only returns true when BOTH client id + secret are set.
+      notion: { configured: false },
+    };
+  }),
+
   list: authedProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db
       .select({
