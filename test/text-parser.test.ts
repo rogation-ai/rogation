@@ -67,10 +67,18 @@ describe("parseTextFile", () => {
     if (r.ok) expect(r.text).toBe("👋 héllo");
   });
 
-  it("accepts CSV / JSON / YAML by extension", async () => {
-    for (const name of ["data.csv", "events.json", "config.yaml"]) {
+  it("accepts JSON / YAML by extension", async () => {
+    // CSV moved to its own parser (lib/evidence/parsers/csv.ts) so
+    // rows can be reformatted Key: value style. parseTextFile now
+    // handles only genuine plain-text formats.
+    for (const name of ["events.json", "config.yaml"]) {
       const r = await parseTextFile(makeFile(name, "x", ""));
       expect(r.ok, `${name} should parse`).toBe(true);
     }
+  });
+
+  it("rejects .csv — that's the CSV parser's job now", async () => {
+    const r = await parseTextFile(makeFile("data.csv", "a,b", ""));
+    expect(r.ok).toBe(false);
   });
 });
