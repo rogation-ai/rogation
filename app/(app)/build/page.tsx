@@ -153,6 +153,13 @@ export default function BuildPage(): React.JSX.Element {
 
   const opportunityIds = (list.data ?? []).map((o) => o.id);
   const feedback = useFeedbackThumbs("opportunity", opportunityIds);
+  // Outcome summaries drive the shipped/won/lost badge per row. Query
+  // is open on every plan — we only gate writes, not reads. Empty
+  // account → empty map → no badges, no work wasted.
+  const outcomeSummary = trpc.outcomes.summary.useQuery(
+    { opportunityIds },
+    { enabled: opportunityIds.length > 0 },
+  );
 
   if (list.isLoading || weightsQ.isLoading) {
     return <SkeletonList count={5} />;
@@ -242,6 +249,7 @@ export default function BuildPage(): React.JSX.Element {
                   >
                     score {o.score.toFixed(2)}
                   </span>
+                  <OutcomeBadge summary={outcomeSummary.data?.[o.id]} />
                 </span>
               </div>
               <p
@@ -329,6 +337,64 @@ export default function BuildPage(): React.JSX.Element {
         ))}
       </aside>
     </div>
+  );
+}
+
+type OutcomeSummaryLite = {
+  count: number;
+  measuredCount: number;
+  verdict: "win" | "loss" | "mixed" | null;
+  avgDelta: number | null;
+};
+
+function OutcomeBadge({
+  summary,
+}: {
+  summary: OutcomeSummaryLite | undefined;
+}): React.JSX.Element | null {
+  if (!summary || summary.count === 0) return null;
+  // Unmeasured rows: show the count so the PM knows a goal was
+  // recorded but no results are in yet. Measured: show the verdict.
+  if (summary.measuredCount === 0) {
+    return (
+      <span
+        className="rounded-full border px-2 py-0.5 text-xs"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-tertiary)",
+        }}
+        title={`${summary.count} metric${summary.count === 1 ? "" : "s"} tracked — no results yet`}
+      >
+        {summary.count} metric{summary.count === 1 ? "" : "s"}
+      </span>
+    );
+  }
+  const verdict = summary.verdict;
+  const label =
+    verdict === "win"
+      ? "✓ Shipped"
+      : verdict === "loss"
+        ? "✗ Missed"
+        : "~ Mixed";
+  const color =
+    verdict === "win"
+      ? "var(--color-success, #16a34a)"
+      : verdict === "loss"
+        ? "var(--color-danger, #dc2626)"
+        : "var(--color-text-tertiary)";
+  const delta =
+    summary.avgDelta === null
+      ? null
+      : ` ${summary.avgDelta >= 0 ? "+" : ""}${(summary.avgDelta * 100).toFixed(0)}%`;
+  return (
+    <span
+      className="rounded-full border px-2 py-0.5 text-xs tabular-nums"
+      style={{ borderColor: color, color }}
+      title={`${summary.measuredCount} of ${summary.count} metric${summary.count === 1 ? "" : "s"} measured`}
+    >
+      {label}
+      {delta}
+    </span>
   );
 }
 
