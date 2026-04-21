@@ -189,13 +189,14 @@ export default function BuildPage(): React.JSX.Element {
             type="button"
             onClick={() => run.mutate()}
             disabled={run.isPending}
+            title="Re-rank opportunities from your current clusters. ~30s, uses your LLM budget."
             className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-60"
             style={{
               borderColor: "var(--color-border-subtle)",
               color: "var(--color-text-secondary)",
             }}
           >
-            {run.isPending ? "Generating…" : "Regenerate with LLM"}
+            {run.isPending ? "Refreshing…" : "Refresh opportunities"}
           </button>
         </header>
 
