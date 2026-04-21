@@ -194,7 +194,7 @@ export default function AppHome(): React.JSX.Element {
             opacity: isUploading ? 0.6 : 1,
           }}
         >
-          <p
+          <h1
             className="text-xl tracking-tight"
             style={{
               fontFamily: "var(--font-display)",
@@ -204,7 +204,7 @@ export default function AppHome(): React.JSX.Element {
             {isUploading
               ? "Uploading…"
               : "Drop files → 3 insights in ~90 seconds"}
-          </p>
+          </h1>
           <p
             className="text-xs"
             style={{ color: "var(--color-text-tertiary)" }}
