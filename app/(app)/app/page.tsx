@@ -295,7 +295,10 @@ export default function AppHome(): React.JSX.Element {
             type="button"
             onClick={submitPaste}
             disabled={paste.isPending || !pasteText.trim()}
-            className="rounded-md px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            // Disabled state is ~30% opacity + grayscale so there's no
+            // ambiguity between "button off" and "brand color is just
+            // muted." Idle/enabled stays full-saturation brand accent.
+            className="rounded-md px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale"
             style={{ background: "var(--color-brand-accent)" }}
           >
             {paste.isPending ? "Adding…" : "Add evidence"}
