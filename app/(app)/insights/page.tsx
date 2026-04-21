@@ -56,10 +56,21 @@ function InsightsPageInner(): React.JSX.Element {
   // Deep-link: /insights?cluster=<id> pre-selects that cluster on
   // first render. CitationChip on the spec editor links here so a
   // PM reading a spec can jump straight to the evidence quotes.
+  //
+  // Fallback: if there's no deep-link and the user hasn't picked a
+  // cluster yet, auto-select the first (highest-severity) one. An
+  // unselected state left both the middle and right panes empty —
+  // two placeholders side by side is dead space.
   useEffect(() => {
+    if (selectedId !== null) return;
     const deep = searchParams.get("cluster");
-    if (deep && selectedId === null) setSelectedId(deep);
-  }, [searchParams, selectedId]);
+    if (deep) {
+      setSelectedId(deep);
+      return;
+    }
+    const first = list.data?.[0]?.id;
+    if (first) setSelectedId(first);
+  }, [searchParams, selectedId, list.data]);
 
   const detail = trpc.insights.detail.useQuery(
     { clusterId: selectedId ?? "" },
