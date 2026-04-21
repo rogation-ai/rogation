@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
+import { Toaster } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { initPostHog, identify, reset } from "@/lib/analytics/posthog-client";
 
@@ -46,6 +47,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <AnalyticsBridge />
         {children}
+        {/*
+          Shared toast surface. Every async action (paste evidence,
+          push to Linear, regenerate, etc.) reports success / error
+          through toast.success / toast.error — no silent 500s.
+          theme=dark picks our palette; closeButton lets users
+          dismiss manually if they're distracted.
+        */}
+        <Toaster
+          theme="dark"
+          position="bottom-right"
+          richColors
+          closeButton
+        />
       </QueryClientProvider>
     </trpc.Provider>
   );
