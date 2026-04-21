@@ -7,6 +7,39 @@ import { z } from "zod";
   Never read process.env directly outside this file.
 */
 
+/*
+  Derive the app's public URL with sensible fallbacks so OAuth callbacks,
+  Stripe return URLs, and share-link origins don't silently point at
+  localhost in production.
+
+  Precedence:
+    1. Explicit NEXT_PUBLIC_APP_URL (overrides everything — useful for
+       custom domains, because Vercel's system vars still report the
+       *.vercel.app alias after you wire a custom domain).
+    2. VERCEL_PROJECT_PRODUCTION_URL on production builds — the stable
+       alias for this Vercel project (no per-deploy hash in the URL).
+    3. VERCEL_URL for preview builds — the one-off deployment URL so
+       OAuth flows can test end-to-end on a PR preview.
+    4. http://localhost:3000 for local dev.
+
+  Vercel injects VERCEL_URL, VERCEL_PROJECT_PRODUCTION_URL, and VERCEL_ENV
+  automatically on every build + at runtime. Users never set them.
+*/
+function resolveAppUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+
+  // VERCEL_ENV: "production" | "preview" | "development"
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (vercelEnv === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if ((vercelEnv === "preview" || vercelEnv === "production") && process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  return "http://localhost:3000";
+}
+
 export const env = createEnv({
   server: {
     NODE_ENV: z
@@ -170,7 +203,7 @@ export const env = createEnv({
     LINEAR_CLIENT_SECRET: process.env.LINEAR_CLIENT_SECRET,
     INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY,
     INNGEST_SIGNING_KEY: process.env.INNGEST_SIGNING_KEY,
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NEXT_PUBLIC_APP_URL: resolveAppUrl(),
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
