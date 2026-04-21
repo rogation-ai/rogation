@@ -4,6 +4,23 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.8.0.0] - 2026-04-21
+
+Close the loop on shipped work. After a spec lands in production, Pro PMs record what moved — and the next time they rank opportunities, those results show up as a verdict badge. Taste compounds into data.
+
+### Added
+
+- **OutcomeCard on the spec sidebar.** Pro plan: inline add / edit / remove rows per metric (name, predicted, actual, optional measured-at). Free + Solo: a tier-appropriate upsell pointing at `/pricing`. Copy differs by tier — Solo gets a one-liner because they already pay; Free gets the full pitch.
+- **Verdict badge on /build rows.** Opportunities with recorded outcomes show `✓ Shipped +N%`, `✗ Missed`, or `~ Mixed` — coloured green/red/grey, with the percentage delta in tabular-nums so badges don't shift under negative numbers. Opportunities with a recorded goal but no actual show `N metrics` instead. 20-opportunity page = 1 batched summary query.
+- **`trpc.outcomes.*` router.** `list({ opportunityId })` + batched `summary({ opportunityIds })` are open on every plan so Pro→Solo downgrades preserve history. `create` / `update` / `delete` gate on `hasOutcomeTracking(plan)` and throw `FORBIDDEN { type: "plan_feature_required" }` so the UI can render an upsell instead of a toast error.
+- **Pure `summarizeOutcomes()` helper.** Computes the win/loss/mixed verdict + the clamped avgDelta (±300%) from a set of predicted/actual pairs. Unit-tested across no-measurement, all-hit, all-miss, mixed, div-by-zero, and wild-outlier cases so the /build badge doesn't silently drift when new metric sources land.
+
+### Changed
+
+- Upgrade pathway from Free/Solo → Pro now has a visible, in-context prompt (the OutcomeCard upsell) instead of only appearing on `/pricing`. Gives PMs a concrete "this is what the paywall actually unlocks" moment at the end of the spec flow.
+
+---
+
 ## [0.7.0.0] - 2026-04-21
 
 Upload the file formats PMs actually have. Research PDFs, Zoom transcripts, Zendesk CSV exports all work now.

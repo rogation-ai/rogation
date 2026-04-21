@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { OutcomeCard } from "@/components/ui/OutcomeCard";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
 import { CitationChip } from "@/components/ui/CitationChip";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -336,6 +337,10 @@ export default function SpecEditorPage({
                 {new Date(spec.updatedAt).toLocaleDateString()}
               </p>
             </div>
+            <OutcomeCard
+              opportunityId={opportunityId}
+              plan={me.data?.account.plan ?? "free"}
+            />
           </>
         ) : (
           <div
