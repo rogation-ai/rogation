@@ -221,7 +221,7 @@ export default function AppHome(): React.JSX.Element {
             className="text-xs"
             style={{ color: "var(--color-text-tertiary)" }}
           >
-            .txt / .md today · PDF / VTT / CSV next commit
+            .txt / .md supported. PDF, VTT, CSV coming soon.
           </p>
           <input
             ref={fileInputRef}
