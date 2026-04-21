@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { NumberedStepper } from "@/components/ui/NumberedStepper";
 import { EVENTS } from "@/lib/analytics/events";
@@ -45,9 +46,20 @@ export default function AppHome(): React.JSX.Element {
   const clusters = trpc.insights.list.useQuery();
   const utils = trpc.useUtils();
   const paste = trpc.evidence.paste.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       utils.evidence.count.invalidate();
       utils.account.me.invalidate();
+      // Without a toast, success was invisible: the textarea cleared
+      // and a tiny footer count ticked up. Users would double-submit
+      // thinking it hadn't worked.
+      toast.success(result.deduped ? "Already in your library" : "Evidence added", {
+        description: result.deduped
+          ? "We've seen this exact text before — nothing was added."
+          : undefined,
+      });
+    },
+    onError: (err) => {
+      toast.error("Couldn't add evidence", { description: err.message });
     },
   });
   const seedSample = trpc.evidence.seedSample.useMutation({
@@ -209,7 +221,7 @@ export default function AppHome(): React.JSX.Element {
             className="text-xs"
             style={{ color: "var(--color-text-tertiary)" }}
           >
-            .txt / .md today · PDF / VTT / CSV next commit
+            .txt / .md supported. PDF, VTT, CSV coming soon.
           </p>
           <input
             ref={fileInputRef}
@@ -295,10 +307,16 @@ export default function AppHome(): React.JSX.Element {
             type="button"
             onClick={submitPaste}
             disabled={paste.isPending || !pasteText.trim()}
-            // Disabled state is ~30% opacity + grayscale so there's no
-            // ambiguity between "button off" and "brand color is just
-            // muted." Idle/enabled stays full-saturation brand accent.
-            className="rounded-md px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale"
+            // Three states: idle-enabled (full brand accent), disabled
+            // (opacity-30 + grayscale — "nothing to submit"), pending
+            // (full color + reduced opacity — "working on it"). The
+            // original design treated pending = disabled, so mid-
+            // submission looked identical to "textarea is empty."
+            className={`rounded-md px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 ${
+              paste.isPending
+                ? "cursor-wait opacity-70"
+                : "disabled:cursor-not-allowed disabled:opacity-30 disabled:grayscale"
+            }`}
             style={{ background: "var(--color-brand-accent)" }}
           >
             {paste.isPending ? "Adding…" : "Add evidence"}

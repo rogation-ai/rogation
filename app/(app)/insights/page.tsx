@@ -189,7 +189,12 @@ function InsightsPageInner(): React.JSX.Element {
 
       {/* Center — selected cluster detail */}
       <section className="flex flex-col gap-4">
-        {selectedId && detail.data ? (
+        {selectedId && detail.isLoading ? (
+          // Cluster selected + quotes in flight (can take up to 3s).
+          // Without this, the empty-state "Pick a cluster on the left"
+          // showed DURING the fetch — misleading, looks unresponsive.
+          <SkeletonList count={3} />
+        ) : selectedId && detail.data ? (
           <>
             <header className="flex items-center gap-3">
               <h1

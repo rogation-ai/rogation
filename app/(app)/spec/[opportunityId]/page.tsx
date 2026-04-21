@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useRef, useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
 import { CitationChip } from "@/components/ui/CitationChip";
@@ -54,7 +55,26 @@ export default function SpecEditorPage({
   const me = trpc.account.me.useQuery();
   const integrationsList = trpc.integrations.list.useQuery();
   const pushLinear = trpc.specs.pushToLinear.useMutation({
-    onSuccess: () => utils.specs.getLatest.invalidate({ opportunityId }),
+    onSuccess: (result) => {
+      utils.specs.getLatest.invalidate({ opportunityId });
+      // Tell the user the push landed. Without this, the UI used to
+      // silently succeed/fail — the 500 path surfaced nothing at all.
+      toast.success("Pushed to Linear", {
+        description: result.identifier
+          ? `Created ${result.identifier}. Opens in Linear.`
+          : "Issue created in your Linear workspace.",
+        action: result.url
+          ? { label: "View", onClick: () => window.open(result.url, "_blank") }
+          : undefined,
+      });
+    },
+    onError: (err) => {
+      // The silent-500 path. Surface the real server message so users
+      // know whether to retry, reconnect, or contact support.
+      toast.error("Couldn't push to Linear", {
+        description: err.message,
+      });
+    },
   });
   const refinements = trpc.specs.refinements.useQuery(
     { opportunityId },
