@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { NumberedStepper } from "@/components/ui/NumberedStepper";
 import { EVENTS } from "@/lib/analytics/events";
@@ -45,9 +46,20 @@ export default function AppHome(): React.JSX.Element {
   const clusters = trpc.insights.list.useQuery();
   const utils = trpc.useUtils();
   const paste = trpc.evidence.paste.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       utils.evidence.count.invalidate();
       utils.account.me.invalidate();
+      // Without a toast, success was invisible: the textarea cleared
+      // and a tiny footer count ticked up. Users would double-submit
+      // thinking it hadn't worked.
+      toast.success(result.deduped ? "Already in your library" : "Evidence added", {
+        description: result.deduped
+          ? "We've seen this exact text before — nothing was added."
+          : undefined,
+      });
+    },
+    onError: (err) => {
+      toast.error("Couldn't add evidence", { description: err.message });
     },
   });
   const seedSample = trpc.evidence.seedSample.useMutation({
