@@ -226,9 +226,25 @@ function LinearTeamPicker({ current }: { current: string | null }): React.JSX.El
   if (teamsQ.isLoading) return <SkeletonList count={1} />;
 
   if (teamsQ.isError) {
+    // Distinguish server-misconfig (PRECONDITION_FAILED) from a
+    // user-actionable failure. Telling a PM "Linear OAuth is not
+    // configured on this server" next to a live Reconnect button is
+    // contradictory; neutralize to a support-directed message so
+    // they don't keep clicking Reconnect and waste their time.
+    const isServerMisconfig =
+      teamsQ.error?.data?.code === "PRECONDITION_FAILED";
     return (
-      <p className="text-sm" style={{ color: "var(--color-danger)" }}>
-        Couldn&apos;t load teams: {teamsQ.error?.message ?? "try reconnecting."}
+      <p
+        className="text-sm"
+        style={{
+          color: isServerMisconfig
+            ? "var(--color-text-secondary)"
+            : "var(--color-danger)",
+        }}
+      >
+        {isServerMisconfig
+          ? "Linear push is temporarily unavailable — our side. Contact support if this persists."
+          : `Couldn't load teams: ${teamsQ.error?.message ?? "try reconnecting."}`}
       </p>
     );
   }
