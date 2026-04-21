@@ -4,6 +4,22 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.8.1.0] - 2026-04-21
+
+Fix the "Connect Linear" dead-end. Before: a Pro user on a deployment without Linear OAuth env vars wired would click Connect, land on a raw `{"error":"Linear OAuth not configured"}` JSON page, and have no path forward. Now: the button either works, or politely says "Coming soon."
+
+### Fixed
+
+- **`/api/oauth/linear/start` and `/api/oauth/linear/callback` redirect on failure.** Replaced raw JSON 503 responses with redirects back to `/settings/integrations?linear=error&reason=...` so every error path ends somewhere recoverable.
+- **"Connect Linear" button no longer renders when OAuth isn't wired.** `/settings/integrations` now reads a new `trpc.integrations.providers` query that inspects server-side env and returns `{ linear: { configured: boolean } }`. When false, the card shows a "Coming soon" pill instead of a live Connect button. Same graceful-degradation tone already used deeper in the flow for `PRECONDITION_FAILED`.
+- **Error banner copy is now reason-specific.** `reason=not_configured` → "Linear integration isn't set up on this deployment yet. Contact support." `reason=unauthorized` → "Sign in first, then try again." Generic fallback preserved for OAuth-denied cases. Tells the user whether retry will help.
+
+### Added
+
+- **`docs/integrations/linear-setup.md`.** Four-step admin runbook: register the Linear OAuth app, set callback URL, copy client id + secret to Vercel, redeploy. Clarifies the multi-tenant model ("you register one OAuth app; every user connects their own Linear workspace; your workspace is never shared") since that was a common point of confusion.
+
+---
+
 ## [0.8.0.0] - 2026-04-21
 
 Close the loop on shipped work. After a spec lands in production, Pro PMs record what moved — and the next time they rank opportunities, those results show up as a verdict badge. Taste compounds into data.
