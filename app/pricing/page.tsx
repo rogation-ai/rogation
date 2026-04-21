@@ -200,6 +200,14 @@ export default function PricingPage(): React.JSX.Element {
       </div>
 
       <p
+        className="mt-12 text-center text-sm"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
+        No contract. Cancel anytime from the billing portal. Paid plans
+        bill monthly through Stripe.
+      </p>
+
+      <p
         className="mt-16 text-xs uppercase tracking-widest"
         style={{ color: "var(--color-text-tertiary)" }}
       >
