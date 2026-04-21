@@ -4,6 +4,20 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.8.2.0] - 2026-04-21
+
+Fix the OAuth-flow-lands-on-localhost bug. Linear authorization on `rogation.vercel.app` was redirecting users to `http://localhost:3000/api/oauth/linear/callback` after consent, because `NEXT_PUBLIC_APP_URL` wasn't set on Vercel and the `env.ts` schema defaulted to localhost. Same bug would have bitten Stripe return URLs and every other place that reads the app's public URL.
+
+### Fixed
+
+- **`env.ts` derives the app URL from Vercel's system env vars when no explicit `NEXT_PUBLIC_APP_URL` is set.** Precedence: explicit > `VERCEL_PROJECT_PRODUCTION_URL` on production > `VERCEL_URL` on preview > `http://localhost:3000` locally. Vercel auto-injects these — zero config needed. Preview deploys now get their own correct callback URL, so OAuth works end-to-end on PR previews without wiring env per branch.
+
+### Added
+
+- **`test/env-app-url.test.ts`.** Five unit tests lock down the fallback chain: explicit wins, production picks the stable alias (not the per-deploy hash, which would break every OAuth redirect on every deploy), preview uses the one-off URL, and localhost is the last-resort default. Regression protection for the exact class of bug that just shipped to prod.
+
+---
+
 ## [0.8.1.0] - 2026-04-21
 
 Fix the "Connect Linear" dead-end. Before: a Pro user on a deployment without Linear OAuth env vars wired would click Connect, land on a raw `{"error":"Linear OAuth not configured"}` JSON page, and have no path forward. Now: the button either works, or politely says "Coming soon."
