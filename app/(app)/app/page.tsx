@@ -221,13 +221,13 @@ export default function AppHome(): React.JSX.Element {
             className="text-xs"
             style={{ color: "var(--color-text-tertiary)" }}
           >
-            .txt / .md supported. PDF, VTT, CSV coming soon.
+            Text, PDF, VTT, and CSV. 2 MB per file, 20 files per batch.
           </p>
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".txt,.md,.log,text/*"
+            accept=".txt,.md,.markdown,.log,.pdf,.vtt,.csv,.tsv,.json,.xml,.yaml,.yml,text/*,application/pdf"
             className="hidden"
             onChange={(e) => e.target.files && uploadFiles(e.target.files)}
           />
