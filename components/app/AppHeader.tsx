@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { UpgradeButton } from "@/components/app/UpgradeButton";
 
@@ -27,6 +28,16 @@ export const NAV = [
 
 export function AppHeader(): React.JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const pathname = usePathname();
+
+  // /app needs exact-match so deeper routes don't all highlight it;
+  // everything else does a prefix match so /evidence/anything stays
+  // "Evidence" and /settings/<sub> stays "Integrations" (Settings
+  // only has one page today).
+  function isActive(href: string): boolean {
+    if (href === "/app") return pathname === "/app";
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
 
   return (
     <header
@@ -43,16 +54,31 @@ export function AppHeader(): React.JSX.Element {
             Rogation
           </Link>
           <nav className="hidden items-center gap-4 text-sm md:flex">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="hover:opacity-80"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {NAV.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className="relative py-3 transition hover:opacity-80"
+                  style={{
+                    color: active
+                      ? "var(--color-brand-accent)"
+                      : "var(--color-text-secondary)",
+                  }}
+                >
+                  {item.label}
+                  {active && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-0 -bottom-[17px] h-[2px]"
+                      style={{ background: "var(--color-brand-accent)" }}
+                    />
+                  )}
+                </Link>
+              );
+            })}
           </nav>
         </div>
         <div className="flex items-center gap-3">
@@ -102,20 +128,29 @@ export function AppHeader(): React.JSX.Element {
           className="flex flex-col border-t md:hidden"
           style={{ borderColor: "var(--color-border-subtle)" }}
         >
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setDrawerOpen(false)}
-              className="flex min-h-[44px] items-center border-b px-6 text-sm"
-              style={{
-                color: "var(--color-text-primary)",
-                borderColor: "var(--color-border-subtle)",
-              }}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setDrawerOpen(false)}
+                aria-current={active ? "page" : undefined}
+                className="flex min-h-[44px] items-center border-b border-l-4 px-6 text-sm"
+                style={{
+                  color: active
+                    ? "var(--color-brand-accent)"
+                    : "var(--color-text-primary)",
+                  borderLeftColor: active
+                    ? "var(--color-brand-accent)"
+                    : "transparent",
+                  borderBottomColor: "var(--color-border-subtle)",
+                }}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
           <div
             className="flex items-center justify-end px-6 py-3"
             style={{ color: "var(--color-text-secondary)" }}
