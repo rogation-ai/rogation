@@ -29,6 +29,7 @@ export default function IntegrationsSettingsPage(): React.JSX.Element {
 function IntegrationsSettingsInner(): React.JSX.Element {
   const search = useSearchParams();
   const linearParam = search.get("linear");
+  const linearReason = search.get("reason");
   const [banner, setBanner] = useState<
     { kind: "ok" | "error"; text: string } | null
   >(null);
@@ -37,14 +38,21 @@ function IntegrationsSettingsInner(): React.JSX.Element {
     if (linearParam === "connected") {
       setBanner({ kind: "ok", text: "Linear connected." });
     } else if (linearParam === "error") {
-      setBanner({
-        kind: "error",
-        text: "Couldn't finish connecting Linear. Try again.",
-      });
+      // Specific reasons tell the user whether retrying helps. A
+      // generic "try again" next to a misconfigured server wastes
+      // clicks; a clear "contact support" gets them unblocked faster.
+      const text =
+        linearReason === "not_configured"
+          ? "Linear integration isn't set up on this deployment yet. Contact support."
+          : linearReason === "unauthorized"
+            ? "Sign in first, then try again."
+            : "Couldn't finish connecting Linear. Try again.";
+      setBanner({ kind: "error", text });
     }
-  }, [linearParam]);
+  }, [linearParam, linearReason]);
 
   const listQ = trpc.integrations.list.useQuery();
+  const providersQ = trpc.integrations.providers.useQuery();
 
   const linear = useMemo(
     () => listQ.data?.find((r) => r.provider === "linear"),
@@ -87,7 +95,12 @@ function IntegrationsSettingsInner(): React.JSX.Element {
 
       {listQ.isLoading ? <SkeletonList count={2} /> : null}
 
-      <LinearCard connected={!!linear?.connected} config={linear?.config ?? null} status={linear?.status ?? null} />
+      <LinearCard
+        connected={!!linear?.connected}
+        config={linear?.config ?? null}
+        status={linear?.status ?? null}
+        configured={providersQ.data?.linear.configured ?? true}
+      />
     </main>
   );
 }
@@ -104,10 +117,18 @@ function LinearCard({
   connected,
   config,
   status,
+  configured,
 }: {
   connected: boolean;
   config: LinearConfig | null;
   status: string | null;
+  /**
+   * Whether the server has Linear OAuth credentials wired. When false,
+   * the Connect button is hidden and replaced with a "coming soon"
+   * notice. We default to `true` while the providers query is in-flight
+   * to avoid flashing the fallback on every page load.
+   */
+  configured: boolean;
 }): React.JSX.Element {
   const utils = trpc.useUtils();
   const disconnect = trpc.integrations.disconnect.useMutation({
@@ -159,7 +180,20 @@ function LinearCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {connected ? (
+          {!configured ? (
+            // OAuth creds aren't wired on this deployment. Showing a live
+            // Connect button would dead-end the user on /api/oauth/linear/start.
+            // Match the tone of LinearTeamPicker's PRECONDITION_FAILED path.
+            <span
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--color-border-subtle)",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              Coming soon
+            </span>
+          ) : connected ? (
             <>
               <a
                 href="/api/oauth/linear/start"

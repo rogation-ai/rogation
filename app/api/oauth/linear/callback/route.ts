@@ -41,10 +41,10 @@ function redirect(path: string): NextResponse {
 
 export async function GET(req: NextRequest) {
   if (!linearOauthConfigured()) {
-    return NextResponse.json(
-      { error: "Linear OAuth not configured" },
-      { status: 503 },
-    );
+    // Should never actually fire — /start would have bounced first —
+    // but if someone crafts a direct callback URL, send them somewhere
+    // recoverable instead of a raw 503 JSON blob.
+    return redirect(`${SETTINGS_ERR}&reason=not_configured`);
   }
 
   const url = new URL(req.url);
