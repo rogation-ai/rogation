@@ -66,11 +66,13 @@ export const integrationsRouter = router({
         lastError: integrationState.lastError,
         config: integrationState.config,
       })
-      .from(integrationState);
+      .from(integrationState)
+      .where(eq(integrationState.accountId, ctx.accountId));
 
     const credRows = await ctx.db
       .select({ provider: integrationCredentials.provider })
-      .from(integrationCredentials);
+      .from(integrationCredentials)
+      .where(eq(integrationCredentials.accountId, ctx.accountId));
     const connected = new Set(credRows.map((r) => r.provider));
 
     return rows.map((r) => ({
@@ -93,7 +95,12 @@ export const integrationsRouter = router({
         nonce: integrationCredentials.nonce,
       })
       .from(integrationCredentials)
-      .where(eq(integrationCredentials.provider, "linear"))
+      .where(
+        and(
+          eq(integrationCredentials.accountId, ctx.accountId),
+          eq(integrationCredentials.provider, "linear"),
+        ),
+      )
       .limit(1);
 
     if (!cred) {
@@ -157,7 +164,12 @@ export const integrationsRouter = router({
           nonce: integrationCredentials.nonce,
         })
         .from(integrationCredentials)
-        .where(eq(integrationCredentials.provider, "linear"))
+        .where(
+          and(
+            eq(integrationCredentials.accountId, ctx.accountId),
+            eq(integrationCredentials.provider, "linear"),
+          ),
+        )
         .limit(1);
 
       if (!cred) {
@@ -237,7 +249,12 @@ export const integrationsRouter = router({
         nonce: integrationCredentials.nonce,
       })
       .from(integrationCredentials)
-      .where(eq(integrationCredentials.provider, "notion"))
+      .where(
+        and(
+          eq(integrationCredentials.accountId, ctx.accountId),
+          eq(integrationCredentials.provider, "notion"),
+        ),
+      )
       .limit(1);
 
     if (!cred) {
@@ -250,7 +267,12 @@ export const integrationsRouter = router({
     const [state] = await ctx.db
       .select({ config: integrationState.config })
       .from(integrationState)
-      .where(eq(integrationState.provider, "notion"))
+      .where(
+        and(
+          eq(integrationState.accountId, ctx.accountId),
+          eq(integrationState.provider, "notion"),
+        ),
+      )
       .limit(1);
 
     const config = isNotionConfig(state?.config) ? state.config : {};
