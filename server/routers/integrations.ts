@@ -5,6 +5,7 @@ import {
   integrationCredentials,
   integrationState,
   type LinearIntegrationConfig,
+  type NotionIntegrationConfig,
 } from "@/db/schema";
 import { decrypt } from "@/lib/crypto/envelope";
 import {
@@ -12,22 +13,19 @@ import {
   LinearApiError,
 } from "@/lib/integrations/linear/client";
 import { linearOauthConfigured } from "@/lib/integrations/linear/oauth";
+import {
+  fetchBotUser,
+  NotionApiError,
+} from "@/lib/integrations/notion/client";
+import { notionOauthConfigured } from "@/lib/integrations/notion/oauth";
+import { pushSpecToNotion } from "@/lib/evidence/push-notion";
+import { canExport } from "@/lib/plans";
+import { checkLimit } from "@/lib/rate-limit";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
   Integrations router. Wraps the state + credential tables with the
-  few surfaces the settings UI actually needs:
-
-  - list(): all providers for this account, with derived {connected,
-    status, config} fields. Never returns the raw access token.
-  - linearTeams(): decrypts the Linear token server-side, fetches the
-    team list via GraphQL, returns id/name/key only. A fresh call so
-    teams added/renamed in Linear show up without disconnect/reconnect.
-  - setLinearDefaultTeam(): persists the selected team on config.
-  - disconnect(): deletes the credential row AND resets state, so a
-    reconnect starts clean. Credential deletion invalidates the token
-    from our side (we can't revoke at Linear without a separate API
-    call; that's a future commit).
+  surfaces the settings UI + spec editor need.
 
   Trust boundary: only authed procedures. RLS filters every query to
   the caller's account. Tokens never cross the tRPC wire.
@@ -37,22 +35,25 @@ function isLinearConfig(v: unknown): v is LinearIntegrationConfig {
   return typeof v === "object" && v !== null;
 }
 
+function isNotionConfig(v: unknown): v is NotionIntegrationConfig {
+  return typeof v === "object" && v !== null;
+}
+
+function isProviderConfig(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
 export const integrationsRouter = router({
   /*
     Server-side feature flags: which providers actually have OAuth
     credentials wired on this deployment. The settings UI reads this
     BEFORE rendering a "Connect X" button so we never show an action
-    the user can't complete. Separate from list() because an account
-    with zero integration_state rows still needs to know "Connect Linear
-    is real" vs "Linear is coming soon."
+    the user can't complete.
   */
   providers: authedProcedure.query(async () => {
     return {
       linear: { configured: linearOauthConfigured() },
-      // When Notion/Zendesk/PostHog/Canny OAuth modules land, add them
-      // here. Each needs a helper like linearOauthConfigured() that
-      // only returns true when BOTH client id + secret are set.
-      notion: { configured: false },
+      notion: { configured: notionOauthConfigured() },
     };
   }),
 
@@ -75,7 +76,7 @@ export const integrationsRouter = router({
     return rows.map((r) => ({
       ...r,
       connected: connected.has(r.provider),
-      config: isLinearConfig(r.config) ? r.config : null,
+      config: isProviderConfig(r.config) ? r.config : null,
     }));
   }),
 
@@ -111,8 +112,6 @@ export const integrationsRouter = router({
       };
     } catch (err) {
       if (err instanceof LinearApiError && err.status === 401) {
-        // Token was revoked at Linear. Mark it so the UI can prompt a
-        // reconnect rather than showing a generic failure.
         await ctx.db
           .update(integrationState)
           .set({ status: "token_invalid", lastError: err.message })
@@ -152,12 +151,6 @@ export const integrationsRouter = router({
         });
       }
 
-      // Validate teamId against the live team list. A client could
-      // otherwise POST a teamId from a different workspace (or a
-      // deleted team) and we'd happily persist it, setting the PM up
-      // for a 404 on their next push. Re-fetching also gives us the
-      // canonical name/key, so the client doesn't control display
-      // strings at all.
       const [cred] = await ctx.db
         .select({
           ciphertext: integrationCredentials.ciphertext,
@@ -225,6 +218,136 @@ export const integrationsRouter = router({
         );
 
       return { ok: true };
+    }),
+
+  /*
+    Notion workspace display + re-validation. Used by the settings page
+    to show the workspace name/icon and confirm the token still works.
+  */
+  notionWorkspace: authedProcedure.query(async ({ ctx }) => {
+    if (!notionOauthConfigured()) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Notion OAuth is not configured on this server.",
+      });
+    }
+    const [cred] = await ctx.db
+      .select({
+        ciphertext: integrationCredentials.ciphertext,
+        nonce: integrationCredentials.nonce,
+      })
+      .from(integrationCredentials)
+      .where(eq(integrationCredentials.provider, "notion"))
+      .limit(1);
+
+    if (!cred) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Notion is not connected for this account.",
+      });
+    }
+
+    const [state] = await ctx.db
+      .select({ config: integrationState.config })
+      .from(integrationState)
+      .where(eq(integrationState.provider, "notion"))
+      .limit(1);
+
+    const config = isNotionConfig(state?.config) ? state.config : {};
+
+    try {
+      const token = decrypt(cred);
+      // Cheap liveness probe — confirms the token wasn't revoked since
+      // connect. We don't depend on the response payload; config holds
+      // the display text from the OAuth callback.
+      await fetchBotUser(token);
+    } catch (err) {
+      if (err instanceof NotionApiError && err.status === 401) {
+        await ctx.db
+          .update(integrationState)
+          .set({ status: "token_invalid", lastError: err.message })
+          .where(
+            and(
+              eq(integrationState.accountId, ctx.accountId),
+              eq(integrationState.provider, "notion"),
+            ),
+          );
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Notion token was revoked. Reconnect to continue.",
+        });
+      }
+      throw err;
+    }
+
+    return {
+      workspaceId: config.workspaceId ?? null,
+      workspaceName: config.workspaceName ?? null,
+      workspaceIcon: config.workspaceIcon ?? null,
+      defaultDatabaseId: config.defaultDatabaseId ?? null,
+      defaultDatabaseName: config.defaultDatabaseName ?? null,
+      setupReason: config.setupReason ?? null,
+    };
+  }),
+
+  /*
+    Push the latest spec for an opportunity as a Notion page.
+
+    Gates (in order):
+      1. Plan must allow Notion export (Pro only, matching Linear).
+      2. Rate limit: 30 / hour / account (shared "linear-push" preset
+         is reused — same cost profile, keeps the table lean).
+      3. Integration connected + default DB provisioned + token valid.
+         All checked inside pushSpecToNotion; structured error codes
+         drive which CTA the UI shows.
+  */
+  pushSpecToNotion: authedProcedure
+    .input(z.object({ opportunityId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!canExport(ctx.plan, "notion")) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Notion export requires the Pro plan.",
+          cause: { type: "plan_limit_reached", feature: "notion-export" },
+        });
+      }
+
+      // Share the linear-push preset: both are 1-mutation-per-call
+      // provider hits with the same abuse envelope.
+      const rl = await checkLimit("linear-push", ctx.accountId);
+      if (!rl.success) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many Notion pushes. Try again shortly.",
+          cause: { type: "rate_limited", limit: rl.limit, resetAt: rl.reset },
+        });
+      }
+
+      const result = await pushSpecToNotion(
+        { db: ctx.db, accountId: ctx.accountId },
+        input.opportunityId,
+      );
+
+      if (!result.ok) {
+        const code =
+          result.error === "spec-not-found"
+            ? "NOT_FOUND"
+            : result.error === "token-invalid"
+              ? "FORBIDDEN"
+              : result.error === "notion-api-error"
+                ? "INTERNAL_SERVER_ERROR"
+                : "PRECONDITION_FAILED";
+        throw new TRPCError({
+          code,
+          message: result.message,
+          cause: { type: "notion-push-failed", reason: result.error },
+        });
+      }
+
+      return {
+        url: result.url,
+        pageId: result.pageId,
+      };
     }),
 
   disconnect: authedProcedure
