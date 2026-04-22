@@ -77,6 +77,20 @@ export default function SpecEditorPage({
       });
     },
   });
+  const pushNotion = trpc.integrations.pushSpecToNotion.useMutation({
+    onSuccess: (result) => {
+      utils.specs.getLatest.invalidate({ opportunityId });
+      toast.success("Pushed to Notion", {
+        description: "Page created in your Rogation Specs database.",
+        action: result.url
+          ? { label: "Open", onClick: () => window.open(result.url, "_blank") }
+          : undefined,
+      });
+    },
+    onError: (err) => {
+      toast.error("Couldn't push to Notion", { description: err.message });
+    },
+  });
   const refinements = trpc.specs.refinements.useQuery(
     { opportunityId },
     { enabled: !!latest.data },
@@ -316,6 +330,14 @@ export default function SpecEditorPage({
                 isPushing={pushLinear.isPending}
                 pushError={pushLinear.error?.message ?? null}
                 onPush={() => pushLinear.mutate({ opportunityId })}
+              />
+              <NotionPushBlock
+                plan={me.data?.account.plan ?? "free"}
+                integrations={integrationsList.data ?? []}
+                isPushing={pushNotion.isPending}
+                pushError={pushNotion.error?.message ?? null}
+                pushedUrl={pushNotion.data?.url ?? null}
+                onPush={() => pushNotion.mutate({ opportunityId })}
               />
               <button
                 type="button"
@@ -884,6 +906,131 @@ function LinearPushBlock({
         }}
       >
         {isPushing ? "Pushing…" : `Push to Linear (${defaultTeamName ?? "team"})`}
+      </button>
+      {pushError ? (
+        <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+          {pushError}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/* ----------------------------- notion push ---------------------------- */
+
+interface NotionPushBlockProps {
+  plan: "free" | "solo" | "pro";
+  integrations: Array<{
+    provider: "zendesk" | "posthog" | "canny" | "linear" | "notion";
+    connected: boolean;
+    status: "active" | "token_invalid" | "rate_limited" | "disabled";
+    config: Record<string, unknown> | null;
+  }>;
+  isPushing: boolean;
+  pushError: string | null;
+  pushedUrl: string | null;
+  onPush: () => void;
+}
+
+/*
+  Push-to-Notion CTA. Mirrors LinearPushBlock — five mutually exclusive
+  states, in order:
+
+    1. Just pushed         → "Open in Notion →" link.
+    2. Plan doesn't allow  → Upgrade CTA to /pricing.
+    3. Not connected       → "Connect Notion first →" link.
+    4. No default DB       → "Reconnect with page access →" link.
+    5. Ready               → solid "Push to Notion" button.
+*/
+function NotionPushBlock({
+  plan,
+  integrations,
+  isPushing,
+  pushError,
+  pushedUrl,
+  onPush,
+}: NotionPushBlockProps): React.JSX.Element {
+  if (pushedUrl) {
+    return (
+      <a
+        href={pushedUrl}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-primary)",
+        }}
+      >
+        Open in Notion →
+      </a>
+    );
+  }
+
+  if (!canExport(plan, "notion")) {
+    return (
+      <Link
+        href="/pricing"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Push to Notion · Upgrade to Pro →
+      </Link>
+    );
+  }
+
+  const notion = integrations.find((i) => i.provider === "notion");
+  if (!notion?.connected) {
+    return (
+      <Link
+        href="/settings/integrations"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Connect Notion first →
+      </Link>
+    );
+  }
+
+  const defaultDatabaseId =
+    typeof notion.config?.defaultDatabaseId === "string"
+      ? notion.config.defaultDatabaseId
+      : null;
+
+  if (!defaultDatabaseId) {
+    return (
+      <Link
+        href="/settings/integrations"
+        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        Reconnect Notion with page access →
+      </Link>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onPush}
+        disabled={isPushing}
+        className="rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-60"
+        style={{
+          borderColor: "var(--color-brand-accent)",
+          color: "var(--color-brand-accent)",
+        }}
+      >
+        {isPushing ? "Pushing…" : "Push to Notion"}
       </button>
       {pushError ? (
         <p className="text-xs" style={{ color: "var(--color-danger)" }}>
