@@ -375,6 +375,20 @@ Every data row belongs to an account. Three layers enforce this:
 
 **Adding a new account-scoped table?** Every new table with an `account_id` column needs a matching `CREATE POLICY` block in a new migration. There is no inheritance — Postgres RLS is per-table. Copy the pattern from `0001_rls_policies.sql`.
 
+## Notion integration
+
+Second integration target (after Linear). Same pattern: OAuth → encrypted token → per-provider helpers. See `docs/integrations/notion-setup.md` for the one-time admin setup.
+
+- **OAuth module.** `lib/integrations/notion/oauth.ts` — `notionOauthConfigured()`, `buildAuthorizeUrl(state)`, `exchangeCodeForToken(code)`. Token exchange uses HTTP Basic auth (client_id:client_secret) + a JSON body; the response is long-lived (no refresh token) and carries `workspace_id` / `workspace_name` / `workspace_icon` / `bot_id` for display.
+- **REST client.** `lib/integrations/notion/client.ts` — thin wrapper over `api.notion.com/v1` with `Notion-Version` pinned. `NotionApiError` carries `status` + `code` so callers flip to `token_invalid` on 401. Helpers: `fetchBotUser`, `findWritablePage`, `createSpecDatabase`, `createSpecPage`, `fetchDatabase`.
+- **Callback auto-provisioning.** `app/api/oauth/notion/callback/route.ts` does more than store a token — on first connect it calls `findWritablePage()` + `createSpecDatabase()` to create a "Rogation Specs" database under the first page the bot was granted access to. Schema: Title (title), Opportunity (rich_text), Readiness (select A/B/C/D), Version (number), Source (url), Created (date). If no writable page exists, the credential is still saved but `config.setupReason = 'no_writable_page'` + `status = 'disabled'` so the UI shows a "Reconnect with page access" CTA instead of silently stranding the PM.
+- **Config.** `NotionIntegrationConfig` in `db/schema.ts`: `workspaceId`, `workspaceName`, `workspaceIcon`, `botId`, `defaultDatabaseId`, `defaultDatabaseName`, `setupReason`. No migration needed — `integrationProvider` enum already includes `notion`.
+- **Push path.** `lib/evidence/push-notion.ts > pushSpecToNotion(ctx, opportunityId)`. Preconditions mirror Linear: spec exists → integration connected → default DB provisioned → non-empty title → token valid. Each failure returns a structured error code that the router maps to a specific `TRPCError` code; the spec editor shows a matching CTA.
+- **Router.** `trpc.integrations.*` grew three surfaces: `providers.notion.configured`, `notionWorkspace()` (display + liveness probe), `pushSpecToNotion({opportunityId})`. `disconnect({provider})` already accepted `notion` in its enum.
+- **UI.** Notion card on `/settings/integrations` (Connect / Reconnect / Disconnect / setup-needed state) + `NotionPushBlock` on `/spec/[opportunityId]` that mirrors the Linear block (5 mutually exclusive states).
+- **Rate limit.** Reuses the `linear-push` preset (30 / hour / account). Same cost profile — one provider mutation + one DB write per call.
+- **Plan gate.** Pro only (`canExport(plan, 'notion')`). Free + Solo see the upgrade CTA instead of the push button.
+
 ## Deploy Configuration (configured by /setup-deploy)
 
 - Platform: Vercel (linked — project `sanxores-projects/rogation`)
