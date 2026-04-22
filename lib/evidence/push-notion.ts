@@ -97,7 +97,12 @@ export async function pushSpecToNotion(
       nonce: integrationCredentials.nonce,
     })
     .from(integrationCredentials)
-    .where(eq(integrationCredentials.provider, "notion"))
+    .where(
+      and(
+        eq(integrationCredentials.accountId, ctx.accountId),
+        eq(integrationCredentials.provider, "notion"),
+      ),
+    )
     .limit(1);
 
   if (!cred) {
@@ -111,7 +116,12 @@ export async function pushSpecToNotion(
   const [state] = await ctx.db
     .select({ config: integrationState.config })
     .from(integrationState)
-    .where(eq(integrationState.provider, "notion"))
+    .where(
+      and(
+        eq(integrationState.accountId, ctx.accountId),
+        eq(integrationState.provider, "notion"),
+      ),
+    )
     .limit(1);
 
   const config = isNotionConfig(state?.config) ? state.config : null;

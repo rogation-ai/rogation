@@ -4,6 +4,12 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.9.0.3] - 2026-04-22
+
+### Fixed — tenant isolation
+
+- **Integration queries now scope by `account_id` explicitly.** Several SELECTs in the integrations router and the Notion push helper were filtering only by `provider`, trusting Postgres RLS to add the account scope. But the app connects as the table owner, and Postgres owners bypass RLS by default (this was an intentional v1 tradeoff per migration 0001's comment, meant to be covered by app-level filters — integrations just didn't have them). Result: `integrations.list` returned integration rows from every account with the same provider, and the UI picked the first match. On a shared Postgres with multiple users, that meant the settings page showed "Connected" cards owned by other accounts; Disconnect silently no-op'd (DELETE still had the proper filter); "Pick a team" and "Reconnect Notion with page access" appeared even when the user's real account had the config saved, because the UI was rendering someone else's row. Every SELECT in `server/routers/integrations.ts` and `lib/evidence/push-notion.ts` now has `eq(..accountId, ctx.accountId)` alongside the provider filter.
+
 ## [0.9.0.2] - 2026-04-22
 
 ### Fixed
