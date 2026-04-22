@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.9.0.1] - 2026-04-22
+
+### Fixed
+
+- **Integration Disconnect button now surfaces errors instead of failing silently.** Previously, if the tRPC mutation failed (network, auth, server error), the button did nothing and the user had no idea why. Now: inline red error text under the card, `aria-role="alert"`, "Disconnecting…" label while in flight, full error logged to `console.error` so DevTools shows the cause. Applies to both Linear and Notion cards.
+- Defensive `preventDefault` + `stopPropagation` on the click handler to rule out any ancestor event swallowing.
+- Force-refetch the integration list on success (not just invalidate) so the UI updates immediately instead of waiting for the next background revalidation.
+
 ## [0.9.0.0] - 2026-04-22
 
 Notion integration. Pro users can now connect their Notion workspace and push specs straight to a "Rogation Specs" database that Rogation provisions automatically on first connect.

@@ -161,9 +161,27 @@ function LinearCard({
   configured: boolean;
 }): React.JSX.Element {
   const utils = trpc.useUtils();
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
   const disconnect = trpc.integrations.disconnect.useMutation({
-    onSuccess: () => utils.integrations.list.invalidate(),
+    onSuccess: async () => {
+      setDisconnectError(null);
+      await utils.integrations.list.invalidate();
+      await utils.integrations.list.refetch();
+    },
+    onError: (err) => {
+      console.error("Linear disconnect failed:", err);
+      setDisconnectError(
+        err.message || "Couldn't disconnect Linear. Try again.",
+      );
+    },
   });
+
+  const onDisconnect = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDisconnectError(null);
+    disconnect.mutate({ provider: "linear" });
+  };
 
   return (
     <section
@@ -207,6 +225,15 @@ function LinearCard({
               Token revoked. Reconnect to continue.
             </p>
           ) : null}
+          {disconnectError ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-danger)" }}
+              role="alert"
+            >
+              {disconnectError}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -237,16 +264,14 @@ function LinearCard({
               </a>
               <button
                 type="button"
-                onClick={() =>
-                  disconnect.mutate({ provider: "linear" })
-                }
+                onClick={onDisconnect}
                 disabled={disconnect.isPending}
                 className="rounded-md px-3 py-2 text-sm"
                 style={{
                   color: "var(--color-danger)",
                 }}
               >
-                Disconnect
+                {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
               </button>
             </>
           ) : (
@@ -401,9 +426,27 @@ function NotionCard({
   configured: boolean;
 }): React.JSX.Element {
   const utils = trpc.useUtils();
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
   const disconnect = trpc.integrations.disconnect.useMutation({
-    onSuccess: () => utils.integrations.list.invalidate(),
+    onSuccess: async () => {
+      setDisconnectError(null);
+      await utils.integrations.list.invalidate();
+      await utils.integrations.list.refetch();
+    },
+    onError: (err) => {
+      console.error("Notion disconnect failed:", err);
+      setDisconnectError(
+        err.message || "Couldn't disconnect Notion. Try again.",
+      );
+    },
   });
+
+  const onDisconnect = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDisconnectError(null);
+    disconnect.mutate({ provider: "notion" });
+  };
 
   // Narrow the config shape via duck-typing. The router returns a
   // Record<string, unknown> because the JSONB column is provider-agnostic;
@@ -474,6 +517,15 @@ function NotionCard({
               Token revoked. Reconnect to continue.
             </p>
           ) : null}
+          {disconnectError ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-danger)" }}
+              role="alert"
+            >
+              {disconnectError}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -505,12 +557,12 @@ function NotionCard({
               </a>
               <button
                 type="button"
-                onClick={() => disconnect.mutate({ provider: "notion" })}
+                onClick={onDisconnect}
                 disabled={disconnect.isPending}
                 className="rounded-md px-3 py-2 text-sm"
                 style={{ color: "var(--color-danger)" }}
               >
-                Disconnect
+                {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
               </button>
             </>
           ) : (
