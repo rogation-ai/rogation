@@ -4,6 +4,12 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.9.0.2] - 2026-04-22
+
+### Fixed
+
+- **Signing out + signing back in as a different user no longer shows the previous user's integration state.** The client-side query cache lived on across sessions because `QueryClient` was instantiated once and never reset. User B would briefly see user A's "Connected" integrations (and any other cached list/detail data) until the page was hard-refreshed. Both UX and a privacy issue on shared machines. Now: the cache is cleared on every Clerk `userId` transition (sign-out, sign-in, user swap).
+
 ## [0.9.0.1] - 2026-04-22
 
 ### Fixed
