@@ -4,6 +4,17 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.9.0.0] - 2026-04-22
+
+Notion integration. Pro users can now connect their Notion workspace and push specs straight to a "Rogation Specs" database that Rogation provisions automatically on first connect.
+
+### Added
+
+- **Connect Notion from `/settings/integrations`.** One-click OAuth, same as Linear. Rogation auto-creates a "Rogation Specs" database in the first page the bot can write to, schema: Title, Opportunity, Readiness (A/B/C/D), Version, Source link, Created date. No manual database setup.
+- **"Push to Notion" on every spec.** Renders the spec IR as native Notion blocks (headings per section, bulleted lists for stories/criteria/edge cases) with a 99-block safety cap and markdown-chunking for long specs. Pro plan gate, 30/hr rate-limit per account.
+- **Graceful-degrade everywhere.** If `NOTION_CLIENT_ID`/`NOTION_CLIENT_SECRET` aren't set on the deployment, the Connect button stays hidden and the card shows "Coming soon" rather than a dead-end click. If consent succeeds but the bot has no writable page, the UI shows "Reconnect with page access" with clear copy.
+- **Admin runbook.** `docs/integrations/notion-setup.md` walks the deployment owner through registering the OAuth app at notion.so/my-integrations and wiring env vars on Vercel.
+
 ## [0.8.2.0] - 2026-04-21
 
 Fix the OAuth-flow-lands-on-localhost bug. Linear authorization on `rogation.vercel.app` was redirecting users to `http://localhost:3000/api/oauth/linear/callback` after consent, because `NEXT_PUBLIC_APP_URL` wasn't set on Vercel and the `env.ts` schema defaulted to localhost. Same bug would have bitten Stripe return URLs and every other place that reads the app's public URL.

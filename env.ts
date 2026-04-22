@@ -148,6 +148,15 @@ export const env = createEnv({
     LINEAR_CLIENT_SECRET: z.string().min(1).optional(),
 
     /*
+      Notion OAuth app credentials. Register at
+      https://www.notion.so/my-integrations (public OAuth). Scopes are
+      fixed by Notion per integration; the app is granted access to
+      specific pages during consent. See docs/integrations/notion-setup.md.
+    */
+    NOTION_CLIENT_ID: z.string().min(1).optional(),
+    NOTION_CLIENT_SECRET: z.string().min(1).optional(),
+
+    /*
       Inngest event + signing keys. Both optional — in dev the SDK
       talks to the local Inngest dev server at 127.0.0.1:8288 and
       neither variable is required. In production both must be set;
@@ -201,6 +210,8 @@ export const env = createEnv({
     INTEGRATION_ENCRYPTION_KEY: process.env.INTEGRATION_ENCRYPTION_KEY,
     LINEAR_CLIENT_ID: process.env.LINEAR_CLIENT_ID,
     LINEAR_CLIENT_SECRET: process.env.LINEAR_CLIENT_SECRET,
+    NOTION_CLIENT_ID: process.env.NOTION_CLIENT_ID,
+    NOTION_CLIENT_SECRET: process.env.NOTION_CLIENT_SECRET,
     INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY,
     INNGEST_SIGNING_KEY: process.env.INNGEST_SIGNING_KEY,
     NEXT_PUBLIC_APP_URL: resolveAppUrl(),

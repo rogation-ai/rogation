@@ -594,6 +594,35 @@ export interface LinearIntegrationConfig {
   [k: string]: unknown;
 }
 
+/*
+  Notion integration config. Auto-created on first connect:
+
+  - workspaceId / workspaceName / workspaceIcon: displayed on the
+    settings page and used to warn the user on reconnect if they
+    connect a different workspace.
+  - botId: the Notion bot user created when the OAuth app was granted
+    access. Stored so we can correlate Notion-side audit with our
+    integration row without another round-trip.
+  - defaultDatabaseId / defaultDatabaseName: the "Rogation Specs"
+    database we auto-create at callback time. Every spec push creates
+    a page in this database. If null, we were unable to find a
+    writable parent page during consent — the UI flips to a
+    "Reconnect with page access" state.
+  - setupReason: non-null when defaultDatabaseId is null, so the UI
+    can show a specific message ("No writable page found" vs
+    "Provisioning failed — retry").
+*/
+export interface NotionIntegrationConfig {
+  workspaceId?: string;
+  workspaceName?: string;
+  workspaceIcon?: string | null;
+  botId?: string;
+  defaultDatabaseId?: string;
+  defaultDatabaseName?: string;
+  setupReason?: "no_writable_page" | "provision_failed";
+  [k: string]: unknown;
+}
+
 /* --------------------------- TYPE INFERENCE ---------------------------- */
 
 export type Account = typeof accounts.$inferSelect;

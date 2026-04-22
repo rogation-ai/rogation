@@ -29,7 +29,8 @@ export default function IntegrationsSettingsPage(): React.JSX.Element {
 function IntegrationsSettingsInner(): React.JSX.Element {
   const search = useSearchParams();
   const linearParam = search.get("linear");
-  const linearReason = search.get("reason");
+  const notionParam = search.get("notion");
+  const reason = search.get("reason");
   const [banner, setBanner] = useState<
     { kind: "ok" | "error"; text: string } | null
   >(null);
@@ -42,20 +43,42 @@ function IntegrationsSettingsInner(): React.JSX.Element {
       // generic "try again" next to a misconfigured server wastes
       // clicks; a clear "contact support" gets them unblocked faster.
       const text =
-        linearReason === "not_configured"
+        reason === "not_configured"
           ? "Linear integration isn't set up on this deployment yet. Contact support."
-          : linearReason === "unauthorized"
+          : reason === "unauthorized"
             ? "Sign in first, then try again."
             : "Couldn't finish connecting Linear. Try again.";
       setBanner({ kind: "error", text });
+    } else if (notionParam === "connected") {
+      setBanner({
+        kind: "ok",
+        text: "Notion connected. Specs push into your Rogation Specs database.",
+      });
+    } else if (notionParam === "needs_page") {
+      setBanner({
+        kind: "error",
+        text: "Notion connected, but no page was shared with Rogation. Reconnect and grant access to at least one page.",
+      });
+    } else if (notionParam === "error") {
+      const text =
+        reason === "not_configured"
+          ? "Notion integration isn't set up on this deployment yet. Contact support."
+          : reason === "unauthorized"
+            ? "Sign in first, then try again."
+            : "Couldn't finish connecting Notion. Try again.";
+      setBanner({ kind: "error", text });
     }
-  }, [linearParam, linearReason]);
+  }, [linearParam, notionParam, reason]);
 
   const listQ = trpc.integrations.list.useQuery();
   const providersQ = trpc.integrations.providers.useQuery();
 
   const linear = useMemo(
     () => listQ.data?.find((r) => r.provider === "linear"),
+    [listQ.data],
+  );
+  const notion = useMemo(
+    () => listQ.data?.find((r) => r.provider === "notion"),
     [listQ.data],
   );
 
@@ -100,6 +123,13 @@ function IntegrationsSettingsInner(): React.JSX.Element {
         config={linear?.config ?? null}
         status={linear?.status ?? null}
         configured={providersQ.data?.linear.configured ?? true}
+      />
+
+      <NotionCard
+        connected={!!notion?.connected}
+        config={notion?.config ?? null}
+        status={notion?.status ?? null}
+        configured={providersQ.data?.notion.configured ?? true}
       />
     </main>
   );
@@ -347,5 +377,156 @@ function LinearTeamPicker({ current }: { current: string | null }): React.JSX.El
         </p>
       ) : null}
     </div>
+  );
+}
+
+interface NotionConfig {
+  workspaceId?: string;
+  workspaceName?: string;
+  workspaceIcon?: string | null;
+  defaultDatabaseId?: string;
+  defaultDatabaseName?: string;
+  setupReason?: "no_writable_page" | "provision_failed";
+}
+
+function NotionCard({
+  connected,
+  config,
+  status,
+  configured,
+}: {
+  connected: boolean;
+  config: NotionConfig | Record<string, unknown> | null;
+  status: string | null;
+  configured: boolean;
+}): React.JSX.Element {
+  const utils = trpc.useUtils();
+  const disconnect = trpc.integrations.disconnect.useMutation({
+    onSuccess: () => utils.integrations.list.invalidate(),
+  });
+
+  // Narrow the config shape via duck-typing. The router returns a
+  // Record<string, unknown> because the JSONB column is provider-agnostic;
+  // here we read only fields we know Notion writes.
+  const cfg: NotionConfig = (config ?? {}) as NotionConfig;
+  const needsSetup = !!cfg.setupReason;
+
+  return (
+    <section
+      className="rounded-lg border p-6"
+      style={{
+        borderColor: "var(--color-border-subtle)",
+        background: "var(--color-surface-raised)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-6">
+        <div className="space-y-1">
+          <h2
+            className="text-lg font-semibold"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            Notion
+          </h2>
+          <p
+            className="text-sm"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            Push specs as pages in an auto-created &ldquo;Rogation Specs&rdquo;
+            database inside your workspace.
+          </p>
+          {connected && cfg.workspaceName ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Workspace:{" "}
+              <span style={{ color: "var(--color-text-primary)" }}>
+                {cfg.workspaceName}
+              </span>
+            </p>
+          ) : null}
+          {connected && cfg.defaultDatabaseName ? (
+            <p
+              className="text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Database:{" "}
+              <span style={{ color: "var(--color-text-primary)" }}>
+                {cfg.defaultDatabaseName}
+              </span>
+            </p>
+          ) : null}
+          {connected && needsSetup ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-danger)" }}
+            >
+              {cfg.setupReason === "no_writable_page"
+                ? "No page was shared with Rogation. Reconnect and grant access to at least one page so we can create the spec database."
+                : "Couldn't create the spec database. Reconnect and retry."}
+            </p>
+          ) : null}
+          {status === "token_invalid" ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-danger)" }}
+            >
+              Token revoked. Reconnect to continue.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {!configured ? (
+            <span
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--color-border-subtle)",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              Coming soon
+            </span>
+          ) : connected ? (
+            <>
+              <a
+                href="/api/oauth/notion/start"
+                className="rounded-md border px-3 py-2 text-sm"
+                style={{
+                  borderColor: needsSetup
+                    ? "var(--color-brand-accent)"
+                    : "var(--color-border-subtle)",
+                  color: needsSetup
+                    ? "var(--color-brand-accent)"
+                    : "var(--color-text-primary)",
+                }}
+              >
+                {needsSetup ? "Reconnect with page access" : "Reconnect"}
+              </a>
+              <button
+                type="button"
+                onClick={() => disconnect.mutate({ provider: "notion" })}
+                disabled={disconnect.isPending}
+                className="rounded-md px-3 py-2 text-sm"
+                style={{ color: "var(--color-danger)" }}
+              >
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <a
+              href="/api/oauth/notion/start"
+              className="rounded-md px-4 py-2 text-sm font-medium"
+              style={{
+                background: "var(--color-brand-accent)",
+                color: "var(--color-text-inverse)",
+              }}
+            >
+              Connect Notion
+            </a>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
