@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import {
   accounts,
@@ -46,6 +46,16 @@ describe.skipIf(!hasTestDb)(
 
     afterAll(async () => {
       await handle?.teardown();
+    });
+
+    // Each test commits its writes, so clean cluster+evidence state between
+    // tests or leftover rows pollute sibling tests (e.g. a no-embedding row
+    // from one test triggers embeddings_pending in another).
+    beforeEach(async () => {
+      await handle.db.execute(sql`
+        TRUNCATE TABLE evidence_to_cluster, evidence_embedding,
+          evidence, insight_cluster RESTART IDENTITY CASCADE
+      `);
     });
 
     it("HIGH_CONF candidate auto-attaches without calling the LLM", async () => {
