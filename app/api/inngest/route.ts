@@ -1,6 +1,7 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/lib/inngest/client";
 import { embedEvidence } from "@/lib/inngest/functions/embed-evidence";
+import { clusterEvidence } from "@/lib/inngest/functions/cluster-evidence";
 
 /*
   Inngest webhook endpoint. Inngest Cloud (or the local dev server)
@@ -13,5 +14,5 @@ import { embedEvidence } from "@/lib/inngest/functions/embed-evidence";
 */
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [embedEvidence],
+  functions: [embedEvidence, clusterEvidence],
 });
