@@ -10,6 +10,7 @@ import {
   type SynthesisOutput,
 } from "@/lib/llm/prompts/synthesis-cluster";
 import type { Tx } from "@/db/scoped";
+import { assertLabelsResolve } from "@/lib/evidence/clustering/validators";
 
 /*
   Clustering orchestrator — Phase A.
@@ -100,17 +101,16 @@ export async function runFullClustering(
 
   // Validate every returned label resolves to an evidence id we
   // actually asked about. Defends against a hallucinated label
-  // leaking a FK violation into the DB.
+  // leaking a FK violation into the DB. Shared with the incremental
+  // path via lib/evidence/clustering/validators.ts.
   const allLabelsInOutput = new Set(
     output.clusters.flatMap((c) => c.evidenceLabels),
   );
-  for (const label of allLabelsInOutput) {
-    if (!labelToId.has(label)) {
-      throw new Error(
-        `synthesis returned unknown evidence label "${label}"; aborting write`,
-      );
-    }
-  }
+  assertLabelsResolve(
+    allLabelsInOutput,
+    new Set(labelToId.keys()),
+    "evidence",
+  );
 
   // Write atomically inside the caller's tx. Wipe prior clusters for
   // this account; evidence_to_cluster cascades.
