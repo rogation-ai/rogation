@@ -239,6 +239,16 @@ export const insightClusters = pgTable(
     >(),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     stale: boolean("stale").notNull().default(false),
+    // Mean of the attached evidence embeddings. Recomputed by
+    // applyClusterActions on every edge mutation; used by KNN to
+    // decide whether a new piece of evidence attaches here or needs
+    // a new cluster. Nullable so existing rows can be backfilled.
+    centroid: vector("centroid", { dimensions: 1536 }),
+    // Self-FK set on MERGE action. Readers resolve via
+    // COALESCE(tombstoned_into, id) through resolveClusterIds().
+    // Never DELETE a merged cluster — opportunity_to_cluster FKs
+    // depend on this row staying resolvable.
+    tombstonedInto: uuid("tombstoned_into"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -273,6 +283,45 @@ export const evidenceToCluster = pgTable(
     index("etc_cluster_idx").on(t.clusterId),
   ],
 );
+
+/*
+  insight_run: one row per user-triggered clustering run. Written by
+  trpc.insights.run (status=pending) and transitioned by the Inngest
+  worker through running -> done | failed. The UI polls
+  trpc.insights.runStatus for the current state so it can swap the
+  "Generate" button for a live progress banner.
+
+  Concurrency: `trpc.insights.run` rejects with CONFLICT when a row
+  in `pending` | `running` exists for this account younger than 5
+  minutes. Older rows are considered stale (worker crashed) and the
+  new run supersedes them — no reaper job needed.
+*/
+export const insightRuns = pgTable(
+  "insight_run",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    mode: text("mode").notNull(),
+    clustersCreated: integer("clusters_created"),
+    evidenceUsed: integer("evidence_used"),
+    durationMs: integer("duration_ms"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [index("insight_run_account_started_idx").on(t.accountId, t.startedAt.desc())],
+);
+
+export type InsightRunStatus = "pending" | "running" | "done" | "failed";
+export type InsightRunMode = "full" | "incremental";
+export type InsightRun = typeof insightRuns.$inferSelect;
 
 export const opportunities = pgTable(
   "opportunity",
