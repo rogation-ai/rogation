@@ -1,0 +1,123 @@
+{
+  "description": "100-row curated fixture for incremental clustering eval baseline. Each row has a ground-truth group label; the prompt should cluster rows within the same group together. Groups: 9, total rows: 100.",
+  "groups": {
+    "onboarding_confusion": [
+      "First time I logged in I had no idea what to do — the dashboard was just empty and there was no 'start here' thing.",
+      "The onboarding wizard crashed after step 2 and I couldn't figure out how to restart it. Had to ask support.",
+      "I spent 20 minutes trying to figure out where to paste my transcripts. The upload button isn't where you'd expect.",
+      "New user here — the sample data button sounds useful but I clicked it and nothing happened for like 10 seconds.",
+      "Why is there a 'connect integration' button prominent on the empty state? I don't have integrations set up, I just want to try the product.",
+      "The first thing I see is a paywall-looking banner and that made me bounce on day one before I tried anything.",
+      "Took me three tries to get past the account creation screen. The Clerk email verification link kept expiring.",
+      "Onboarding stepper says 'Step 2 of 3' but I can't figure out what counts as completing step 2.",
+      "I paste evidence in and nothing visible happens. Am I supposed to wait? Is it embedding? No feedback loop.",
+      "Watched the intro video but when I went back to the app none of the buttons matched what the video showed.",
+      "Signed up with Google OAuth and got sent to an empty /app page with no guidance.",
+      "The 'Use sample data' button populated the library but didn't auto-advance me to the insights screen.",
+      "Tutorial tooltip pops up, I close it, and it never comes back. No way to re-read the instructions.",
+      "Confused about what counts as 'evidence'. Is a JIRA ticket ok? A Slack quote? The UI doesn't say.",
+      "First ten minutes of the product I felt dumb. That's a bad sign — polish the onboarding."
+    ],
+    "mobile_perf": [
+      "The insights page takes 6+ seconds to load on my iPhone over LTE. Desktop is fine.",
+      "Scrolling the evidence library on mobile janks badly. Probably a virtualization issue.",
+      "Opened the app on my Pixel and the spec editor just froze for like 15 seconds before becoming interactive.",
+      "Mobile Safari: the bottom-nav buttons overlap with the send button on the spec chat panel.",
+      "Generating a cluster on mobile spins the loader for 30+ seconds even when desktop returns in 5.",
+      "When I tap 'generate spec' on Android Chrome, the streaming cursor is laggy — words appear in chunks every second instead of smoothly.",
+      "Pinch-zoom doesn't work on the insights detail view, which is basically required on mobile with all those quotes.",
+      "Tried to upload a PDF from my phone and the file picker hung forever. Had to switch to laptop.",
+      "Mobile keyboard covers the textarea in the refinement chat — I can't see what I'm typing.",
+      "PWA install prompt never shows. I want this on my home screen.",
+      "Spec preview on mobile is wider than the viewport, horizontal scroll is awkward.",
+      "The onboarding wizard on mobile is unusable — buttons are off-screen on my Galaxy S21.",
+      "Mobile: tapping the severity pill opens the filter menu but also triggers row navigation. Double-action bug.",
+      "Every page load on mobile downloads like 500KB of JS. Way too heavy for what this does.",
+      "Dropdown menus are broken on iOS — they open but close immediately on the same tap."
+    ],
+    "share_link_expiry": [
+      "Sent a share link to my PM yesterday, she clicked it today and it said 'expired'. 24h expiry is way too short.",
+      "The share link copy button copies a link but the link is dead by the time I paste it into Slack.",
+      "Our whole team needs persistent share links for async review. The current expiry makes that impossible.",
+      "Shared a spec with my designer, she got '404 link expired' the next morning. Had to regenerate and re-send.",
+      "Is there a way to make a share link NOT expire? I don't see that setting anywhere.",
+      "When a share link expires, the recipient just sees a blank page. No message saying 'ask the sender for a new link'.",
+      "I'd happily upgrade to Pro just for long-lived share links. Free tier's 1-hour expiry is punitive.",
+      "Generated a share link, closed the tab, and now I can't find the link anywhere. No share-history page.",
+      "Our compliance team needs audit trail on who accessed a shared spec. Share links give nothing visible.",
+      "Share link went out in a Slack thread, 6 people tried to open it, 4 said 'expired' by the time they clicked.",
+      "Watermarked share links would be fine if they at least stayed alive more than a day.",
+      "Feature request: share link with a toggle for 7d / 30d / never. The all-or-nothing forever-expired thing sucks."
+    ],
+    "pricing_confusion": [
+      "Free plan says '10 evidence' but I added 12 and nothing blocked me. Was that a bug or is the limit soft?",
+      "Pricing page mentions 'Pro' and 'Solo' but when I click upgrade it's just a single Stripe checkout for one tier.",
+      "Is the $29/mo the annual price divided by 12, or the monthly price? The pricing page is ambiguous.",
+      "I can't tell from the pricing page whether Notion export is a Pro feature or Solo feature.",
+      "The plan comparison table says 'outcome tracking' on Pro but I have no idea what that actually does.",
+      "Why is 'share link watermark' a gated feature? That's weird to gate.",
+      "Hit the 10-evidence limit on Free and the upgrade CTA sends me to a 500 page. Stripe checkout never opens.",
+      "The upgrade modal doesn't show the plan's limits — I have to click through to pricing to see what I'm paying for.",
+      "Am I being charged monthly or annually? My Stripe receipt doesn't say.",
+      "Grandfathered in the beta — what happens to my plan when v1 ships? No one told me."
+    ],
+    "csv_export_bugs": [
+      "Exported my evidence library as CSV and the first row had column headers but also duplicated as data.",
+      "CSV export truncates long evidence content at 255 chars even though the UI shows the full thing.",
+      "Special characters (emdash, smart quote) break in the CSV — they come out as ?? boxes.",
+      "The export includes an 'id' column but the IDs don't match what's visible in the UI.",
+      "CSV export has no timestamps. I need to know when each evidence was ingested for my report.",
+      "UTF-8 evidence comes out as ANSI garbage in Excel. Add a BOM?",
+      "Opened the CSV in Google Sheets and got 'malformed quoted string' errors on several rows.",
+      "Export button spins forever on a library of 200 items. No progress indicator, not sure if it's working.",
+      "Columns are in a different order in the CSV vs the UI — confusing for anyone cross-referencing.",
+      "The CSV export includes rows I've already deleted. Soft-delete is leaking."
+    ],
+    "session_expiry": [
+      "I was mid-edit on a spec and got silently logged out, lost 10 minutes of refinement chat.",
+      "Clerk session seems to expire around 1hr, but the app doesn't warn me — I just hit 'save' and get redirected to /sign-in.",
+      "Race condition: tab A refreshes the Clerk token, tab B is still using the old one, mutations fail.",
+      "Every time I leave my laptop asleep overnight, I come back and have to sign in again. There's no 'remember me' toggle.",
+      "The sign-in redirect after session expiry drops me on /app instead of the page I was on.",
+      "Got a weird 401 error from a tRPC call, refreshed, and was still signed in. Stale cache?",
+      "Opened 4 tabs of the app, closed one, all the others logged me out. Tab-sync bug with Clerk.",
+      "The streaming spec generation died halfway through with 'Session expired' — I lost the partial spec.",
+      "After OAuth redirect from Linear integration, I'm logged out of the main app and have to re-auth.",
+      "Session expires too aggressively — I set my computer to sleep during lunch and came back to redo everything.",
+      "Refinement chat sometimes returns 401 on the 3rd or 4th turn. Restarting the conversation fixes it.",
+      "The spec refinement endpoint is especially flaky — maybe 1 in 10 turns fails with a session error."
+    ],
+    "integration_oauth_flakes": [
+      "Connected Linear, everything worked for a day, then 'push to Linear' started returning 401. Had to reconnect.",
+      "Notion OAuth flow completed but the Rogation Specs database was never created. Stuck in 'setup needed' state.",
+      "Linear integration shows 'Connected' but the push button does nothing — no error, no success.",
+      "Tried to connect Notion and got a Clerk error mid-OAuth. Now I can't connect OR disconnect.",
+      "After disconnect, the integration card still shows my old workspace name. Stale state.",
+      "Notion 'reconnect' button takes me to the same OAuth screen I already completed. Infinite loop.",
+      "OAuth callback URL is apparently wrong for our Notion enterprise plan — the code grant fails every time.",
+      "I can connect Notion but can't see which Notion workspace I connected. Need a 'view settings' link.",
+      "Push to Linear works for the first spec, then every subsequent push returns 500. No pattern I can see.",
+      "The integrations page says 'Pro only' for Notion but I'm on Pro and still can't click connect."
+    ],
+    "search_relevance": [
+      "Searched 'onboarding' in the evidence library and got 3 matches, missing obvious ones that say 'new user'.",
+      "The search is case-sensitive? That can't be right.",
+      "Search seems to only match exact strings, not related concepts. No semantic search?",
+      "Filtered by severity=critical and got zero results despite 10 critical-tagged clusters existing.",
+      "Cluster detail search doesn't highlight the match in quotes — I have to ctrl-F manually.",
+      "Sort by 'frequency' sorts alphabetically by title instead. Clear bug.",
+      "Search in opportunities page returns spec titles mixed in. Cross-contamination.",
+      "The global search bar at the top does nothing — hit enter, no results, no error."
+    ],
+    "billing_webhook_drops": [
+      "Upgraded to Pro via Stripe Checkout, got the receipt email, but the app still shows me on Free plan 30 minutes later.",
+      "Stripe webhook says delivered but my plan never updated. Had to bug support to manually flip it.",
+      "Subscription cancelled on Stripe dashboard, but the app still treats me as Pro and lets me use Pro features.",
+      "Payment method changed in Stripe portal, the app doesn't reflect the new card's last-four digits anywhere.",
+      "Got double-charged this month because the webhook fired twice and we think created two subscriptions.",
+      "Free trial ended but the app didn't downgrade me automatically — had to hit refresh 5 times.",
+      "Dunning emails went out for a failed payment but the app showed no banner warning me.",
+      "Invoice PDF link in billing page 404s — Stripe Customer Portal works but our app's copy is broken."
+    ]
+  }
+}
