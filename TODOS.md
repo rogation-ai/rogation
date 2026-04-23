@@ -4,28 +4,6 @@ Deferred work items captured during planning. Each has context so someone pickin
 
 ---
 
-## CI DB test harness refactor (P1)
-
-**What:** DB-backed integration tests (account-provision, evidence-ingest, llm-usage, plans-integration, tenant-isolation, feedback) are skipped in CI. The pgvector service container + `TEST_DATABASE_URL` were removed from `.github/workflows/ci.yml` on 2026-04-20.
-
-**Why:** The current `test/setup-db.ts` creates an isolated per-file schema (`test_<label>_<timestamp>`) and runs migrations into it. That works for tests using `handle.db` exclusively. It breaks for tests that call app code — `provisionAccountForClerkUser` imports `db` from `@/db/client` which connects via `env.DATABASE_URL` with default `public` search_path. Two worlds. The tests-that-call-app-code see empty tables in public while the isolated test schema stays untouched.
-
-Surfaced during the v0.1.0.0 ship: CI consistently failed with `type "..." already exists`, then `relation "public.account" does not exist`, then `password authentication failed for user "runner"` after each incremental fix. Root cause is architectural, not a one-line patch.
-
-**How to close:** Pick one of:
-
-1. **Drop schema isolation, use `public` + truncate between files.** Tests run sequentially (`fileParallelism: false` already). Drop + recreate `public` in `setupTestDb`, install extensions, run migrations once. App's `db` and `handle.db` see the same tables. Simplest; matches what the tests were implicitly assuming.
-
-2. **Point app `db` at the test connection.** Mock `@/db/client` in a vitest setup file so the singleton uses the test harness's connection + search_path. Keeps per-file isolation but requires every test file to share one mock config.
-
-3. **Refactor app code to accept injected `db`.** `provisionAccountForClerkUser(input, { db = globalDb })` etc. Cleanest long-term but touches every app helper.
-
-Recommend option 1 for v1.1. Re-enable the pgvector service container + `TEST_DATABASE_URL` in CI after the refactor lands.
-
-**Blocked by:** Nothing. Do before the next feature that touches RLS or account provisioning, because you'll want integration coverage back before changing load-bearing code.
-
----
-
 ## Weekly digest email
 
 **What:** Weekly "3 new insights since last week" email to re-engage PMs.

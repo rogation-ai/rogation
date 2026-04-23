@@ -8,17 +8,25 @@ import * as schema from "@/db/schema";
 /*
   Integration test DB harness.
 
-  Strategy: create a throwaway schema per test file, apply both
-  migrations to it, return a Drizzle client bound to it, drop it on
-  teardown. Isolation is free — parallel test files don't touch each
-  other — and the real DB stays clean.
+  Strategy: one shared `public` schema per test process. The first
+  setupTestDb() call of the run drops + recreates `public`, installs
+  extensions, runs every migration once. Every subsequent call (each
+  test file's beforeAll) truncates every table so the next file sees
+  a clean slate. `fileParallelism: false` in vitest.config.ts
+  serializes files.
+
+  Why not per-file isolated schemas: app code (e.g.
+  `provisionAccountForClerkUser`) imports `db` from `@/db/client`,
+  which uses the default search_path (public). Per-file schemas left
+  the app's db pointing at empty public tables while the harness wrote
+  to `test_<label>`. Two worlds, broken tests in CI.
 
   Gating: if TEST_DATABASE_URL isn't set, callers should `describe.skip`
   and emit a clear message. We never auto-run DB tests against a
   production DATABASE_URL — tests would wipe it.
 
-  Requires pgvector to be installed in the cluster (not just the schema).
-  Supabase and Neon have it preloaded.
+  Requires pgvector + pgcrypto to be installed in the cluster. The
+  bootstrap CREATEs them into public defensively.
 */
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
@@ -36,61 +44,44 @@ export interface TestDbHandle {
 
 const MIGRATIONS_DIR = join(process.cwd(), "db", "migrations");
 
+// Module-level flag: first setupTestDb() of the process does the full
+// bootstrap; every later call just truncates.
+let bootstrapped = false;
+
 function readMigrations(): Array<{ tag: string; sql: string }> {
   return readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith(".sql"))
     .sort()
     .map((f) => ({
       tag: f.replace(/\.sql$/, ""),
-      // drizzle-kit emits `"public"."foo"` for types + some refs. For
-      // per-schema test isolation we want everything unqualified so it
-      // lands in the test schema (search_path[0]) and dies with
-      // `DROP SCHEMA CASCADE` on teardown. Without this strip, CREATE
-      // TYPE survives across test files and the second run hits
-      // `type "..." already exists`.
-      sql: readFileSync(join(MIGRATIONS_DIR, f), "utf8").replace(
-        /"public"\./g,
-        "",
-      ),
+      sql: readFileSync(join(MIGRATIONS_DIR, f), "utf8"),
     }));
 }
 
-export async function setupTestDb(
-  label: string,
-): Promise<TestDbHandle> {
-  if (!TEST_DATABASE_URL) {
-    throw new Error("TEST_DATABASE_URL is not set");
-  }
+async function listTables(
+  conn: ReturnType<typeof postgres>,
+): Promise<string[]> {
+  const rows = await conn<{ tablename: string }[]>`
+    SELECT tablename
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename NOT LIKE '__drizzle%'
+  `;
+  return rows.map((r) => r.tablename);
+}
 
-  // Unique schema per test run + file label, safe for concurrent runs.
-  const schemaName = `test_${label.replace(/[^a-z0-9_]/gi, "_")}_${Date.now().toString(36)}`;
+async function bootstrapPublic(
+  conn: ReturnType<typeof postgres>,
+): Promise<void> {
+  // Wipe and reinstall. Extensions live in public, so we recreate them
+  // after the drop. Migrations' `CREATE EXTENSION IF NOT EXISTS` is
+  // a no-op after this.
+  await conn.unsafe(`DROP SCHEMA IF EXISTS public CASCADE`);
+  await conn.unsafe(`CREATE SCHEMA public`);
+  await conn.unsafe(`GRANT ALL ON SCHEMA public TO public`);
+  await conn.unsafe(`CREATE EXTENSION IF NOT EXISTS vector SCHEMA public`);
+  await conn.unsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public`);
 
-  // Bootstrap: create the schema + ensure extensions exist in public.
-  // Installing vector/pgcrypto in public (not the test schema) means
-  // parallel test files don't race each other — the migration's
-  // CREATE EXTENSION IF NOT EXISTS is a no-op, but the `vector` type
-  // is always resolvable via search_path fallback to public.
-  const boot = postgres(TEST_DATABASE_URL, { prepare: false, max: 1 });
-  await boot.unsafe(`CREATE EXTENSION IF NOT EXISTS vector SCHEMA public`);
-  await boot.unsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA public`);
-  await boot.unsafe(`CREATE SCHEMA "${schemaName}"`);
-  await boot.end({ timeout: 2 });
-
-  // Main connection: max=1 so every query (including drizzle
-  // transactions) runs on the same connection where we set
-  // search_path. Tests within a single file are sequential — no
-  // parallelism benefit from a larger pool, and max>1 tripped
-  // postgres.js's UNSAFE_TRANSACTION guard for drizzle transactions.
-  const conn = postgres(TEST_DATABASE_URL, {
-    prepare: false,
-    max: 1,
-    connection: { search_path: `"${schemaName}",public` },
-  });
-
-  // Apply migrations in order. Each migration file is parsed at
-  // drizzle-kit's --> statement-breakpoint markers so we can run each
-  // statement independently (some drivers don't accept multi-statement
-  // strings).
   const migrations = readMigrations();
   for (const m of migrations) {
     const statements = m.sql
@@ -101,19 +92,48 @@ export async function setupTestDb(
       await conn.unsafe(stmt);
     }
   }
+}
+
+async function truncateAll(
+  conn: ReturnType<typeof postgres>,
+): Promise<void> {
+  const tables = await listTables(conn);
+  if (tables.length === 0) return;
+  const quoted = tables.map((t) => `"public"."${t}"`).join(", ");
+  // RESTART IDENTITY resets sequences; CASCADE handles FKs.
+  await conn.unsafe(`TRUNCATE ${quoted} RESTART IDENTITY CASCADE`);
+}
+
+export async function setupTestDb(label: string): Promise<TestDbHandle> {
+  if (!TEST_DATABASE_URL) {
+    throw new Error("TEST_DATABASE_URL is not set");
+  }
+
+  // One connection per handle. max=1 keeps drizzle transactions on
+  // the same connection where search_path + RLS session vars live.
+  const conn = postgres(TEST_DATABASE_URL, {
+    prepare: false,
+    max: 1,
+  });
+
+  if (!bootstrapped) {
+    await bootstrapPublic(conn);
+    bootstrapped = true;
+  } else {
+    await truncateAll(conn);
+  }
 
   const db = drizzle(conn, { schema, casing: "snake_case" });
 
   return {
     db,
     conn,
-    schemaName,
+    schemaName: "public",
     teardown: async () => {
-      try {
-        await conn.unsafe(`DROP SCHEMA "${schemaName}" CASCADE`);
-      } finally {
-        await conn.end({ timeout: 2 });
-      }
+      // Close this file's connection. Next file's setupTestDb() opens
+      // a fresh one and truncates the shared public schema before
+      // its tests run.
+      await conn.end({ timeout: 2 });
     },
   };
 }
