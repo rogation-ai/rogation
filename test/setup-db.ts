@@ -70,6 +70,33 @@ async function listTables(
   return rows.map((r) => r.tablename);
 }
 
+/*
+  Tables where RLS is enabled AND we want the test role to be SUBJECT
+  to it (not bypass as owner). Excludes `account` and `user` because
+  `provisionAccountForClerkUser` creates new rows via the app's `db`
+  client without any session var bound (it's the bootstrap path — no
+  accountId exists yet). Production runs provisioning as the owner
+  role (documented bypass); tests keep the same pattern so provision
+  code works under the harness.
+*/
+const FORCE_RLS_TABLES = [
+  "evidence",
+  "evidence_embedding",
+  "insight_cluster",
+  "evidence_to_cluster",
+  "opportunity",
+  "opportunity_to_cluster",
+  "opportunity_score_weights",
+  "spec",
+  "spec_refinement",
+  "outcome",
+  "activity_log",
+  "entity_feedback",
+  "integration_credential",
+  "integration_state",
+  "llm_usage",
+];
+
 async function bootstrapPublic(
   conn: ReturnType<typeof postgres>,
 ): Promise<void> {
@@ -91,6 +118,15 @@ async function bootstrapPublic(
     for (const stmt of statements) {
       await conn.unsafe(stmt);
     }
+  }
+
+  // Force RLS on account-scoped tables so the test role (table owner)
+  // is subject to the policies in migration 0001. Without this, tests
+  // that exercise cross-account isolation silently pass with data
+  // leaking across tenants. Production runs a similar setup under a
+  // separate restricted role (v2 roadmap); tests simulate that now.
+  for (const table of FORCE_RLS_TABLES) {
+    await conn.unsafe(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`);
   }
 }
 
