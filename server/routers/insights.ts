@@ -3,10 +3,12 @@ import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { insightClusters } from "@/db/schema";
 import {
+  deleteAllClustersForAccount,
   getClusterDetail,
   listClusters,
   runFullClustering,
 } from "@/lib/evidence/synthesis";
+import { applyClusterActions } from "@/lib/evidence/clustering/apply";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
@@ -58,18 +60,25 @@ export const insightsRouter = router({
     }),
 
   run: authedProcedure.mutation(async ({ ctx }) => {
-    return runFullClustering(
+    // Phase A path: cold-start full re-cluster via the shared apply
+    // executor. Next commit adds the orchestrator that dispatches
+    // full vs incremental based on account state.
+    await deleteAllClustersForAccount(ctx.db, ctx.accountId);
+    const { plan, evidenceUsed, promptHash } = await runFullClustering(
       { db: ctx.db, accountId: ctx.accountId },
       {
-        // chargeLLM returns the monthly totals so feature code can
-        // branch on them; the onUsage hook doesn't care about the
-        // payload, only whether a throw aborts the call. Wrap to
-        // drop the return value.
         onUsage: async (u) => {
           await ctx.chargeLLM(u);
         },
         onTrace: ctx.traceLLM,
       },
     );
+    const { clustersCreated } = await applyClusterActions(
+      ctx.db,
+      plan,
+      ctx.accountId,
+      promptHash,
+    );
+    return { clustersCreated, evidenceUsed, promptHash };
   }),
 });
