@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
+import { insightClusters } from "@/db/schema";
 import type { Tx } from "@/db/scoped";
 import { ClusteringError } from "./errors";
 
@@ -36,7 +37,7 @@ export interface ResolveCtx {
 
 interface RawRow {
   id: string;
-  tombstoned_into: string | null;
+  tombstonedInto: string | null;
 }
 
 /**
@@ -74,17 +75,22 @@ export async function resolveClusterIds(
         `tombstone chain exceeds MAX_CHAIN_DEPTH (${MAX_CHAIN_DEPTH}); suspected cycle`,
       );
     }
-    const fetched = (await ctx.db.execute(
-      sql`SELECT id::text AS id, tombstoned_into::text AS tombstoned_into
-          FROM insight_cluster
-          WHERE id = ANY(${frontier}::uuid[])`,
-    )) as unknown as RawRow[];
+    // Use drizzle's inArray builder, not sql`ANY(${arr}::uuid[])` —
+    // the tag expands arrays into ($1, $2) records that postgres
+    // rejects as "cannot cast record to uuid[]".
+    const fetched: RawRow[] = await ctx.db
+      .select({
+        id: insightClusters.id,
+        tombstonedInto: insightClusters.tombstonedInto,
+      })
+      .from(insightClusters)
+      .where(inArray(insightClusters.id, frontier));
     for (const r of fetched) rows.set(r.id, r);
     // Queue up any tombstoned_into targets we haven't fetched yet.
     const nextFrontier: string[] = [];
     for (const r of fetched) {
-      if (r.tombstoned_into && !rows.has(r.tombstoned_into)) {
-        nextFrontier.push(r.tombstoned_into);
+      if (r.tombstonedInto && !rows.has(r.tombstonedInto)) {
+        nextFrontier.push(r.tombstonedInto);
       }
     }
     frontier = nextFrontier;
@@ -100,11 +106,11 @@ export async function resolveClusterIds(
     const visited = new Set<string>([cur]);
     while (true) {
       const row = rows.get(cur);
-      if (!row || row.tombstoned_into === null) break;
-      if (visited.has(row.tombstoned_into)) {
+      if (!row || row.tombstonedInto === null) break;
+      if (visited.has(row.tombstonedInto)) {
         throw new ClusteringError(
           "tombstone_cycle",
-          `tombstone cycle detected starting at ${id} (hit ${row.tombstoned_into} twice)`,
+          `tombstone cycle detected starting at ${id} (hit ${row.tombstonedInto} twice)`,
         );
       }
       if (visited.size >= MAX_CHAIN_DEPTH) {
@@ -113,8 +119,8 @@ export async function resolveClusterIds(
           `tombstone chain for ${id} exceeds MAX_CHAIN_DEPTH (${MAX_CHAIN_DEPTH})`,
         );
       }
-      visited.add(row.tombstoned_into);
-      cur = row.tombstoned_into;
+      visited.add(row.tombstonedInto);
+      cur = row.tombstonedInto;
     }
     result.set(id, cur);
   }
