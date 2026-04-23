@@ -1,4 +1,12 @@
 import { definePrompt } from "@/lib/llm/prompts";
+import {
+  asSeverity,
+  asString,
+  asStringArray,
+  cdataEscape,
+  escapeXml,
+  extractJson,
+} from "@/lib/llm/prompts/json-shape";
 
 /*
   First-pass clustering prompt.
@@ -79,9 +87,9 @@ export const synthesisCluster = definePrompt<SynthesisInput, SynthesisOutput>({
     const wrapped = input.evidence
       .map(
         (e) =>
-          `<evidence id="${escapeXml(e.label)}"><![CDATA[${
-            e.content
-          }]]></evidence>`,
+          `<evidence id="${escapeXml(e.label)}"><![CDATA[${cdataEscape(
+            e.content,
+          )}]]></evidence>`,
       )
       .join("\n");
 
@@ -140,45 +148,5 @@ export const synthesisCluster = definePrompt<SynthesisInput, SynthesisOutput>({
   },
 });
 
-/* ---------------------------- helpers ---------------------------- */
-
-function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-/**
- * Pulls the first JSON object out of the raw text. Tolerates a stray
- * markdown fence even though the prompt says no fences — the model
- * sometimes ignores that rule.
- */
-function extractJson(raw: string): unknown {
-  const trimmed = raw.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = fenceMatch?.[1]?.trim() ?? trimmed;
-  return JSON.parse(candidate);
-}
-
-function asString(v: unknown, path: string): string {
-  if (typeof v !== "string" || v.length === 0) {
-    throw new Error(`${path}: expected non-empty string`);
-  }
-  return v;
-}
-
-function asSeverity(v: unknown, path: string): SynthesisOutput["clusters"][number]["severity"] {
-  if (v === "low" || v === "medium" || v === "high" || v === "critical") {
-    return v;
-  }
-  throw new Error(`${path}: expected severity enum, got ${String(v)}`);
-}
-
-function asStringArray(v: unknown, path: string): string[] {
-  if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) {
-    throw new Error(`${path}: expected string[]`);
-  }
-  return v as string[];
-}
+/* Helpers moved to lib/llm/prompts/json-shape.ts and shared with
+   synthesis-incremental + any future JSON-returning prompt. */
