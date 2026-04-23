@@ -39,19 +39,89 @@ export default function InsightsPage(): React.JSX.Element {
   );
 }
 
+const TERMINAL_STATUSES = new Set(["done", "failed"]);
+const POLL_INTERVAL_MS = 1500;
+const STUCK_TIMEOUT_MS = 5 * 60 * 1000;
+
 function InsightsPageInner(): React.JSX.Element {
   const evCount = trpc.evidence.count.useQuery();
   const list = trpc.insights.list.useQuery();
   const utils = trpc.useUtils();
-  const run = trpc.insights.run.useMutation({
-    onSuccess: () => {
-      utils.insights.list.invalidate();
+
+  // Tracks the in-flight re-cluster id. Seeded from `latestRun` on
+  // mount so reloading mid-run keeps the progress indicator; cleared
+  // when the poll sees a terminal status.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [stuckRun, setStuckRun] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+
+  // Resume polling after a page reload if the latest run is still in flight.
+  // One-shot: only seeds when we have no activeRunId yet.
+  const latest = trpc.insights.latestRun.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+  useEffect(() => {
+    if (activeRunId || !latest.data) return;
+    if (!TERMINAL_STATUSES.has(latest.data.status)) {
+      setActiveRunId(latest.data.id);
+    }
+  }, [latest.data, activeRunId]);
+
+  const runStatus = trpc.insights.runStatus.useQuery(
+    { runId: activeRunId ?? "" },
+    {
+      enabled: Boolean(activeRunId),
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        if (!data) return POLL_INTERVAL_MS;
+        return TERMINAL_STATUSES.has(data.status) ? false : POLL_INTERVAL_MS;
+      },
+      refetchOnWindowFocus: false,
+    },
+  );
+
+  // Terminal-status handler: success → invalidate + reselect; failure →
+  // just clear activeRunId so the button re-enables + surfaces the
+  // server error below.
+  useEffect(() => {
+    const data = runStatus.data;
+    if (!data) return;
+    if (data.status === "done") {
+      void utils.insights.list.invalidate();
+      void utils.insights.latestRun.invalidate();
       setSelectedId(null);
+      setActiveRunId(null);
+      setStuckRun(false);
+    } else if (data.status === "failed") {
+      setActiveRunId(null);
+      setStuckRun(false);
+    }
+  }, [runStatus.data, utils]);
+
+  // Client-side stuck-run cutoff. DB rows are not reaped here — that's
+  // an operational concern for later. This just stops the UI from
+  // polling forever when an event was silently dropped.
+  useEffect(() => {
+    if (!activeRunId || !runStatus.data) return;
+    const elapsed = Date.now() - new Date(runStatus.data.startedAt).getTime();
+    if (elapsed > STUCK_TIMEOUT_MS && !TERMINAL_STATUSES.has(runStatus.data.status)) {
+      setStuckRun(true);
+      setActiveRunId(null);
+    }
+  }, [runStatus.data, activeRunId]);
+
+  const run = trpc.insights.run.useMutation({
+    onSuccess: ({ runId }) => {
+      setActiveRunId(runId);
+      setStuckRun(false);
     },
   });
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const searchParams = useSearchParams();
+  const isRunning = Boolean(activeRunId);
+  const runError = run.error?.message ?? (runStatus.data?.status === "failed"
+    ? runStatus.data.error ?? "Re-cluster failed."
+    : null) ?? (stuckRun ? "Taking too long — retry." : null);
 
   // Deep-link: /insights?cluster=<id> pre-selects that cluster on
   // first render. CitationChip on the spec editor links here so a
@@ -110,10 +180,10 @@ function InsightsPageInner(): React.JSX.Element {
       <section className="flex flex-col gap-6">
         {hasThinCorpus && (
           <StaleBanner
-            message={`Clusters get sharper around ${THIN_CORPUS_THRESHOLD}+ pieces. You have ${count}. ${run.error?.message ?? ""}`}
+            message={`Clusters get sharper around ${THIN_CORPUS_THRESHOLD}+ pieces. You have ${count}. ${runError ?? ""}`}
             actionLabel={count >= 1 ? "Run anyway" : "Upload more"}
             onAction={() => (count >= 1 ? run.mutate() : undefined)}
-            isRunning={run.isPending}
+            isRunning={isRunning}
           />
         )}
         {!hasThinCorpus && (
@@ -124,11 +194,11 @@ function InsightsPageInner(): React.JSX.Element {
             <button
               type="button"
               onClick={() => run.mutate()}
-              disabled={run.isPending}
+              disabled={isRunning || run.isPending}
               className="rounded-md px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
               style={{ background: "var(--color-brand-accent)" }}
             >
-              {run.isPending ? "Clustering…" : "Generate clusters"}
+              {isRunning ? "Clustering…" : "Generate clusters"}
             </button>
           </div>
         )}
@@ -179,12 +249,17 @@ function InsightsPageInner(): React.JSX.Element {
         <button
           type="button"
           onClick={() => run.mutate()}
-          disabled={run.isPending}
+          disabled={isRunning || run.isPending}
           className="mt-4 text-xs underline-offset-2 hover:underline disabled:opacity-60"
           style={{ color: "var(--color-text-secondary)" }}
         >
-          {run.isPending ? "Refreshing…" : "Refresh clusters"}
+          {isRunning ? "Refreshing…" : "Refresh clusters"}
         </button>
+        {runError && !isRunning && (
+          <p className="mt-2 text-xs" style={{ color: "var(--color-danger)" }}>
+            {runError}
+          </p>
+        )}
       </aside>
 
       {/* Center — selected cluster detail */}

@@ -1,24 +1,38 @@
 import { TRPCError } from "@trpc/server";
-import { inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { insightClusters } from "@/db/schema";
+import { insightClusters, insightRuns } from "@/db/schema";
 import {
   getClusterDetail,
   listClusters,
 } from "@/lib/evidence/synthesis";
-import { runClustering } from "@/lib/evidence/clustering/orchestrator";
-import { checkLimit } from "@/lib/rate-limit";
+import { dispatchClusterRun } from "@/lib/evidence/clustering/dispatch";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
-  Insights router. Three procedures:
+  Insights router.
 
-  - list: all clusters for this account, severity/frequency-sorted.
-  - detail: one cluster + its supporting evidence quotes.
-  - run: kick off a full re-cluster. Synchronous for Phase A — the
-    Inngest worker commit moves this off the request path once batch
-    sizes grow past what a single request can handle.
+  - list / detail / byIds: read paths over clusters.
+  - run: create an `insight_run` row + emit `EVENT_CLUSTER_REQUESTED`;
+    the Inngest worker in lib/inngest/functions/cluster-evidence.ts
+    picks it up, flips status to running/done/failed, and writes
+    metrics. Synchronous clustering lived here through Lane D; Lane E
+    moved it off the request path so a 10–30s re-cluster doesn't hold
+    the tRPC request open.
+  - runStatus / latestRun: power the UI polling loop on /insights.
 */
+
+const RUN_COLUMNS = {
+  id: insightRuns.id,
+  status: insightRuns.status,
+  mode: insightRuns.mode,
+  clustersCreated: insightRuns.clustersCreated,
+  evidenceUsed: insightRuns.evidenceUsed,
+  durationMs: insightRuns.durationMs,
+  error: insightRuns.error,
+  startedAt: insightRuns.startedAt,
+  finishedAt: insightRuns.finishedAt,
+} as const;
 
 export const insightsRouter = router({
   list: authedProcedure.query(async ({ ctx }) => {
@@ -59,36 +73,37 @@ export const insightsRouter = router({
     }),
 
   run: authedProcedure.mutation(async ({ ctx }) => {
-    // Rate limit BEFORE the LLM call. Each run can burn ~$0.30 of
-    // Sonnet tokens; 10/hour/account is plenty for iteration while
-    // stopping a tight loop. Failing OPEN in dev is intentional —
-    // see lib/rate-limit.ts header.
-    const limitResult = await checkLimit("cluster-run", ctx.accountId);
-    if (!limitResult.success) {
-      throw new TRPCError({
-        code: "TOO_MANY_REQUESTS",
-        message: "Too many re-cluster runs. Try again in an hour.",
-        cause: {
-          type: "rate_limited",
-          preset: "cluster-run",
-          limit: limitResult.limit,
-          resetAt: limitResult.reset,
-        },
-      });
-    }
-    // Synchronous for Phase A. Lane E swaps this for event emission
-    // + insight_run row + Inngest worker dispatch + UI polling. The
-    // orchestrator picks full vs incremental internally per design §7
-    // and takes a per-account advisory lock so concurrent requests
-    // don't corrupt the write path.
-    return runClustering(
-      { db: ctx.db, accountId: ctx.accountId },
-      {
-        onUsage: async (u) => {
-          await ctx.chargeLLM(u);
-        },
-        onTrace: ctx.traceLLM,
-      },
-    );
+    return dispatchClusterRun({ db: ctx.db, accountId: ctx.accountId });
+  }),
+
+  runStatus: authedProcedure
+    .input(z.object({ runId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      // RLS scopes this to the caller's account. A runId from a
+      // different account returns zero rows → NOT_FOUND.
+      const [row] = await ctx.db
+        .select(RUN_COLUMNS)
+        .from(insightRuns)
+        .where(eq(insightRuns.id, input.runId))
+        .limit(1);
+      if (!row) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Run not found",
+        });
+      }
+      return row;
+    }),
+
+  latestRun: authedProcedure.query(async ({ ctx }) => {
+    // Drives "resume polling after a page reload" — the UI seeds its
+    // activeRunId from this if the latest run is non-terminal.
+    const [row] = await ctx.db
+      .select(RUN_COLUMNS)
+      .from(insightRuns)
+      .where(eq(insightRuns.accountId, ctx.accountId))
+      .orderBy(desc(insightRuns.startedAt))
+      .limit(1);
+    return row ?? null;
   }),
 });
