@@ -86,10 +86,14 @@ export async function runEmbedEvidence(input: {
 export const embedEvidence = inngest.createFunction(
   {
     id: "embed-evidence",
-    // OpenAI's embeddings endpoint allows ~3k req/min on our tier.
-    // 10 concurrent workers is safe and keeps batch uploads moving
-    // without a burst that could starve other API traffic.
-    concurrency: { limit: 10 },
+    // OpenAI's embeddings endpoint allows ~3k req/min on our tier,
+    // so provider throughput is not the bottleneck. The cap here is
+    // the Inngest plan concurrency limit (5 on the current tier).
+    // A higher value here fails the entire app sync — Inngest
+    // validates plan caps before registering any function, so one
+    // over-cap function blocks every other function from syncing.
+    // Bump when the Inngest plan moves up.
+    concurrency: { limit: 5 },
     // Retry transient provider failures. Inngest backs off
     // exponentially between attempts.
     retries: 4,
