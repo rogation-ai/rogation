@@ -195,6 +195,17 @@ async function bootstrapPublic(): Promise<void> {
     for (const table of FORCE_RLS_TABLES) {
       await boot.unsafe(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`);
     }
+
+    // Transfer ownership of `account` and `user` to test_app so seed
+    // code in 6 test files can DISABLE/ENABLE RLS on those tables to
+    // bootstrap initial rows. (The policy is `id = app.current_account_id()`
+    // which is NULL before any account exists — can't satisfy WITH CHECK
+    // on first insert, so seed code briefly turns RLS off.) These two
+    // tables are not in FORCE_RLS_TABLES, so test_app owning them means
+    // provisionAccountForClerkUser also works under the role via the
+    // documented owner-bypass for the bootstrap path.
+    await boot.unsafe(`ALTER TABLE "account" OWNER TO ${TEST_ROLE}`);
+    await boot.unsafe(`ALTER TABLE "user" OWNER TO ${TEST_ROLE}`);
   } finally {
     await boot.end({ timeout: 2 });
   }
