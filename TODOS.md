@@ -4,6 +4,22 @@ Deferred work items captured during planning. Each has context so someone pickin
 
 ---
 
+## chargeAndEnforce spend persistence across rollback (P2)
+
+**What:** `lib/llm/usage.ts > chargeAndEnforce(db, plan, accountId, usage)` UPSERTs the monthly `llm_usage` row and then throws FORBIDDEN when the call pushes past the hard cap. CLAUDE.md promises "The spend is recorded *before* the throw, so overruns are visible in logs + alerting." The implementation runs the UPSERT inside the caller's transaction — when the throw propagates, the tx rolls back and the UPSERT rolls back with it. No overrun row persists.
+
+**Why:** Over-cap accounts should surface in alerting even when the caller's flow rolls back. Today they don't. The observability claim in CLAUDE.md is aspirational.
+
+**How to close:** `chargeUsage` needs a connection independent of the caller's tx. Two options:
+1. Open a short-lived autocommit connection via `postgres()` for the UPSERT only, then throw from the outer scope.
+2. Emit an Inngest event (`llm-usage/charge`) and let a worker UPSERT out of band. Asynchronous, loses strict ordering vs same-call reads but matches the router's existing fire-and-forget pattern for `onTrace`.
+
+Option 1 is simpler and keeps post-charge reads in-transaction-consistent. Option 2 is more robust under DB pressure.
+
+**Blocked by:** Nothing. Pick up alongside the next observability commit.
+
+---
+
 ## Weekly digest email
 
 **What:** Weekly "3 new insights since last week" email to re-engage PMs.
