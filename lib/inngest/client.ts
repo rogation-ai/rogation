@@ -20,6 +20,14 @@ export interface EvidenceEmbedRequestedData {
   evidenceId: string;
 }
 
+export const EVENT_CLUSTER_REQUESTED = "insights/cluster.requested" as const;
+
+export interface ClusterRequestedData {
+  /** Pre-created insight_run row id. Worker updates status on it. */
+  runId: string;
+  accountId: string;
+}
+
 export const inngest = new Inngest({
   id: "rogation",
 });
