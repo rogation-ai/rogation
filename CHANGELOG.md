@@ -4,6 +4,31 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.0.0] - 2026-04-23
+
+Incremental re-clustering. Re-clustering is now fast, cheap, and stays out of your way.
+
+### Added
+
+- **Re-clustering runs in the background.** Clicking "Refresh clusters" no longer holds the page open for 30 seconds. The app dispatches the job to a worker and the UI polls for progress, so you can keep scrolling, pick another cluster to read, or close the tab and come back. Reload mid-run and the progress indicator picks up exactly where you left off.
+- **Incremental path for warm accounts.** New evidence joins existing clusters via fast KNN matching; only the truly-uncertain pieces reach the LLM. A typical re-cluster on a seasoned account now costs a fraction of the full run and finishes in seconds instead of tens of seconds. The full path still handles cold-start accounts and small corpora.
+- **Per-account serialization.** Two fast clicks on "Refresh" don't spawn two expensive runs anymore — the second one silently rides on the first. Different accounts still re-cluster in parallel.
+- **Centroid backfill script + runbook.** `scripts/backfill-centroids.ts` populates cluster centroids for accounts that existed before the incremental path shipped. `docs/runbooks/incremental-reclustering-rollout.md` covers the full deploy sequence.
+
+### For contributors
+
+- New `insight_run` table tracks each re-cluster: `pending → running → done/failed` with metrics (`mode`, `clustersCreated`, `evidenceUsed`, `durationMs`).
+- New Inngest worker `cluster-evidence` (concurrency: 1 per account, retries: 0). Listens on `insights/cluster.requested`.
+- New tRPC surfaces: `insights.run` (dispatch), `insights.runStatus`, `insights.latestRun`. The polling UI on `/insights` drives all three.
+- New prompt: `lib/llm/prompts/synthesis-incremental.ts` with a 100-row eval fixture at `test/evals/incremental-clustering.eval.ts`.
+- Every LLM call through the shared `applyClusterActions` write path — full and incremental both funnel through one tested module. Stale-flag wiring, centroid recompute, and MERGE tombstoning live there.
+- `cluster-run` rate-limit preset (10/hr/account) gates LLM spend.
+- Inngest plan concurrency cap: `embed-evidence` must stay at 5. Higher values fail the entire app sync since Inngest validates plan caps before registering any function.
+
+### Fixed
+
+- **Inngest app sync on production.** `embed-evidence` declared `concurrency: 10` while the Inngest plan caps at 5. All-or-nothing validation meant the whole app (including the new `cluster-evidence` worker) never synced, so re-cluster dispatches would queue events with no handler. UI hung on "Refreshing…" indefinitely. Dropped to `concurrency: 5`.
+
 ## [0.9.0.3] - 2026-04-22
 
 ### Fixed — tenant isolation

@@ -13,7 +13,7 @@ Paste transcripts, support tickets, or survey responses. Rogation clusters them 
 ## What's in v0.1.0.0
 
 - **Evidence ingestion.** Paste text or upload `.txt / .md / .log / .csv / .json / .yaml`. Content-hash dedup, per-plan caps, 20 files / 10 MB per batch.
-- **Clustering.** Sonnet 4.6 reads the corpus inside a prompt-cache boundary, returns typed cluster IR, every cluster carries the `prompt_hash` of the prompt version that produced it.
+- **Clustering.** Two paths: full (cold start, Sonnet 4.6) and incremental (KNN-triaged, Haiku 4.5). The orchestrator picks per design §7. Async dispatch via an Inngest worker — the UI polls at 1.5s while a re-cluster runs and resumes across page reloads via `latestRun`. Every cluster carries the `prompt_hash` of the prompt that produced it, so eval regressions pinpoint the offending version.
 - **Opportunities.** Five LLM-scored primitives feed a pure weighted score that re-ranks optimistically on slider drag; the server uses the exact same formula.
 - **Spec editor.** Streaming SSE generation, A/B/C/D readiness grade, IR-aware refinement chat, every turn produces a new persisted spec version.
 - **Linear push.** One click creates a real Linear issue with acceptance criteria + full markdown. OAuth, AES-256-GCM token storage, HMAC-signed state.
