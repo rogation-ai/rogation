@@ -3,12 +3,11 @@ import { inArray } from "drizzle-orm";
 import { z } from "zod";
 import { insightClusters } from "@/db/schema";
 import {
-  deleteAllClustersForAccount,
   getClusterDetail,
   listClusters,
-  runFullClustering,
 } from "@/lib/evidence/synthesis";
-import { applyClusterActions } from "@/lib/evidence/clustering/apply";
+import { runClustering } from "@/lib/evidence/clustering/orchestrator";
+import { checkLimit } from "@/lib/rate-limit";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
@@ -60,11 +59,29 @@ export const insightsRouter = router({
     }),
 
   run: authedProcedure.mutation(async ({ ctx }) => {
-    // Phase A path: cold-start full re-cluster via the shared apply
-    // executor. Next commit adds the orchestrator that dispatches
-    // full vs incremental based on account state.
-    await deleteAllClustersForAccount(ctx.db, ctx.accountId);
-    const { plan, evidenceUsed, promptHash } = await runFullClustering(
+    // Rate limit BEFORE the LLM call. Each run can burn ~$0.30 of
+    // Sonnet tokens; 10/hour/account is plenty for iteration while
+    // stopping a tight loop. Failing OPEN in dev is intentional —
+    // see lib/rate-limit.ts header.
+    const limitResult = await checkLimit("cluster-run", ctx.accountId);
+    if (!limitResult.success) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: "Too many re-cluster runs. Try again in an hour.",
+        cause: {
+          type: "rate_limited",
+          preset: "cluster-run",
+          limit: limitResult.limit,
+          resetAt: limitResult.reset,
+        },
+      });
+    }
+    // Synchronous for Phase A. Lane E swaps this for event emission
+    // + insight_run row + Inngest worker dispatch + UI polling. The
+    // orchestrator picks full vs incremental internally per design §7
+    // and takes a per-account advisory lock so concurrent requests
+    // don't corrupt the write path.
+    return runClustering(
       { db: ctx.db, accountId: ctx.accountId },
       {
         onUsage: async (u) => {
@@ -73,12 +90,5 @@ export const insightsRouter = router({
         onTrace: ctx.traceLLM,
       },
     );
-    const { clustersCreated } = await applyClusterActions(
-      ctx.db,
-      plan,
-      ctx.accountId,
-      promptHash,
-    );
-    return { clustersCreated, evidenceUsed, promptHash };
   }),
 });

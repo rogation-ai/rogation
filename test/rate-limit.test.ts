@@ -76,6 +76,7 @@ describe("rate-limit module (no Upstash configured)", () => {
     const { RATE_LIMIT_PRESETS } = await import("@/lib/rate-limit");
     expect(Object.keys(RATE_LIMIT_PRESETS).sort()).toEqual([
       "checkout-create",
+      "cluster-run",
       "linear-push",
       "share-link",
       "spec-chat",

@@ -99,6 +99,17 @@ export const RATE_LIMIT_PRESETS = {
     requests: 30,
     window: "1 h",
   },
+  /**
+   * Re-cluster runs. By accountId. Each run can call Sonnet 4.6 with
+   * a 20k-token prompt — that's real money. 10/hour is plenty for a
+   * PM iterating on a corpus (re-cluster after adding evidence, then
+   * again after adding more) but stops a tight loop from burning
+   * $5 in 10 seconds.
+   */
+  "cluster-run": {
+    requests: 10,
+    window: "1 h",
+  },
 } as const;
 
 export type RateLimitPreset = keyof typeof RATE_LIMIT_PRESETS;
