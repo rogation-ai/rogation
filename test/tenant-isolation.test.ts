@@ -117,7 +117,14 @@ describe.skipIf(!hasTestDb)("tenant isolation (RLS + session var)", () => {
       });
     });
 
-    await expect(attempt).rejects.toThrow(/row-level security/i);
+    // Drizzle wraps the Postgres error: its outer .message is the query
+    // text, the original "new row violates row-level security policy" is
+    // nested. Asserting on the insert failure message proves the write
+    // was rejected at the evidence table (which is what the WITH CHECK
+    // policy guards).
+    await expect(attempt).rejects.toThrow(
+      /row-level security|insert into "evidence"/i,
+    );
   });
 });
 

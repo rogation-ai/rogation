@@ -19,10 +19,14 @@ export default defineConfig({
     environment: "node",
     globals: false,
     include: ["test/**/*.test.ts"],
-    // DB-backed tests run sequentially to avoid cross-pollution on a
-    // shared test schema. Unit tests are fine in parallel, but our
-    // integration tests share tables; single file concurrency only.
+    // DB-backed tests share the `public` schema and truncate between
+    // files. Strict serial execution is required — parallel files
+    // would TRUNCATE each other's fixtures mid-test.
     fileParallelism: false,
+    // Global setup points app-side DATABASE_URL at TEST_DATABASE_URL
+    // so test code and the app's `@/db/client` singleton use the same
+    // Postgres. Must run before any test module imports.
+    setupFiles: ["./test/setup.ts"],
     testTimeout: 15_000,
     env: {
       // Tests never need env validation — they provide their own

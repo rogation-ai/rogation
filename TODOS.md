@@ -4,25 +4,19 @@ Deferred work items captured during planning. Each has context so someone pickin
 
 ---
 
-## CI DB test harness refactor (P1)
+## chargeAndEnforce spend persistence across rollback (P2)
 
-**What:** DB-backed integration tests (account-provision, evidence-ingest, llm-usage, plans-integration, tenant-isolation, feedback) are skipped in CI. The pgvector service container + `TEST_DATABASE_URL` were removed from `.github/workflows/ci.yml` on 2026-04-20.
+**What:** `lib/llm/usage.ts > chargeAndEnforce(db, plan, accountId, usage)` UPSERTs the monthly `llm_usage` row and then throws FORBIDDEN when the call pushes past the hard cap. CLAUDE.md promises "The spend is recorded *before* the throw, so overruns are visible in logs + alerting." The implementation runs the UPSERT inside the caller's transaction — when the throw propagates, the tx rolls back and the UPSERT rolls back with it. No overrun row persists.
 
-**Why:** The current `test/setup-db.ts` creates an isolated per-file schema (`test_<label>_<timestamp>`) and runs migrations into it. That works for tests using `handle.db` exclusively. It breaks for tests that call app code — `provisionAccountForClerkUser` imports `db` from `@/db/client` which connects via `env.DATABASE_URL` with default `public` search_path. Two worlds. The tests-that-call-app-code see empty tables in public while the isolated test schema stays untouched.
+**Why:** Over-cap accounts should surface in alerting even when the caller's flow rolls back. Today they don't. The observability claim in CLAUDE.md is aspirational.
 
-Surfaced during the v0.1.0.0 ship: CI consistently failed with `type "..." already exists`, then `relation "public.account" does not exist`, then `password authentication failed for user "runner"` after each incremental fix. Root cause is architectural, not a one-line patch.
+**How to close:** `chargeUsage` needs a connection independent of the caller's tx. Two options:
+1. Open a short-lived autocommit connection via `postgres()` for the UPSERT only, then throw from the outer scope.
+2. Emit an Inngest event (`llm-usage/charge`) and let a worker UPSERT out of band. Asynchronous, loses strict ordering vs same-call reads but matches the router's existing fire-and-forget pattern for `onTrace`.
 
-**How to close:** Pick one of:
+Option 1 is simpler and keeps post-charge reads in-transaction-consistent. Option 2 is more robust under DB pressure.
 
-1. **Drop schema isolation, use `public` + truncate between files.** Tests run sequentially (`fileParallelism: false` already). Drop + recreate `public` in `setupTestDb`, install extensions, run migrations once. App's `db` and `handle.db` see the same tables. Simplest; matches what the tests were implicitly assuming.
-
-2. **Point app `db` at the test connection.** Mock `@/db/client` in a vitest setup file so the singleton uses the test harness's connection + search_path. Keeps per-file isolation but requires every test file to share one mock config.
-
-3. **Refactor app code to accept injected `db`.** `provisionAccountForClerkUser(input, { db = globalDb })` etc. Cleanest long-term but touches every app helper.
-
-Recommend option 1 for v1.1. Re-enable the pgvector service container + `TEST_DATABASE_URL` in CI after the refactor lands.
-
-**Blocked by:** Nothing. Do before the next feature that touches RLS or account provisioning, because you'll want integration coverage back before changing load-bearing code.
+**Blocked by:** Nothing. Pick up alongside the next observability commit.
 
 ---
 
