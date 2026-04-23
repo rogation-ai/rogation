@@ -349,7 +349,7 @@ async function insertEdges(
  * NULL (partial HNSW index already excludes tombstones; NULL-centroid
  * rows are also excluded).
  */
-async function recomputeClusterAggregates(
+export async function recomputeClusterAggregates(
   tx: Tx,
   clusterId: string,
   accountId: string,
