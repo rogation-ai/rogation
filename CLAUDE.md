@@ -148,7 +148,7 @@ Router entrypoints (`trpc.evidence.*`):
 
 **What's not in this commit (follow-ups):**
 
-- PDF / VTT / CSV parsers with structural awareness (papaparse, pdf-parse, custom VTT).
+- PDF / VTT / CSV parsers with structural awareness (papaparse, unpdf, custom VTT).
 - Integration pull (Zendesk / PostHog / Canny).
 - Inngest worker for async embedding at batch scale.
 - Sample-data seeder.
