@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { OutcomeCard } from "@/components/ui/OutcomeCard";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
+import { StaleBanner } from "@/components/ui/StaleBanner";
 import { CitationChip } from "@/components/ui/CitationChip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
@@ -249,6 +250,15 @@ export default function SpecEditorPage({
         >
           {opportunity.reasoning}
         </p>
+
+        {spec?.stale && !isStreaming && (
+          <StaleBanner
+            message="Source clusters changed since this spec was generated. Regenerating creates a new version and starts a new chat thread."
+            actionLabel="Regenerate spec"
+            isRunning={isStreaming}
+            onAction={() => startStream("generate")}
+          />
+        )}
 
         {isStreaming || (streamText && !spec) ? (
           <StreamingPreview text={streamText} live={isStreaming} />

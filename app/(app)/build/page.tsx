@@ -7,6 +7,7 @@ import { ConfidenceBadge } from "@/components/ui/ConfidenceBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
+import { StaleBanner } from "@/components/ui/StaleBanner";
 import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 
 /*
@@ -217,6 +218,14 @@ export default function BuildPage(): React.JSX.Element {
                 background: "var(--color-surface-raised)",
               }}
             >
+              {o.stale && (
+                <StaleBanner
+                  message="Linked clusters changed. Re-rank to refresh."
+                  actionLabel="Re-rank"
+                  isRunning={run.isPending}
+                  onAction={() => run.mutate()}
+                />
+              )}
               <div className="flex items-start justify-between gap-3">
                 <span className="flex items-center gap-3">
                   <span
