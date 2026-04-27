@@ -72,3 +72,27 @@ Rotating that one env var invalidates every stored credential AND every in-fligh
 **How to close:** Add `INTEGRATION_STATE_SIGNING_KEY` to `env.ts` (optional, falls back to `INTEGRATION_ENCRYPTION_KEY` so existing deploys don't break). Update `lib/integrations/state.ts > keyBytes()` to prefer the new var when set. Document the rotation pattern in CLAUDE.md.
 
 **Blocked by:** First real key rotation need. Probably ≥6 months out.
+
+---
+
+## Re-parent opportunity_to_cluster edges across MERGE tombstones (P3)
+
+**What:** When `applyClusterActions` MERGEs clusters, losers are tombstoned (the row stays with `tombstoned_into` set, edges re-parent for `evidence_to_cluster`). But `opportunity_to_cluster.cluster_id` keeps pointing at the loser id forever. Read paths don't follow the tombstone chain, so opportunities silently link to dead clusters.
+
+**Why:** The v0.10.1.0 staleness fan-out makes this visible — opportunities linked to MERGE losers correctly flip to `stale=true`, but if the user never clicks "Re-rank", the OTC link stays pointed at a tombstoned cluster indefinitely. Re-rank heals it (regen creates fresh edges to live clusters), so this is more "tidy data" than "broken behavior."
+
+**Pros:**
+
+- Read-side queries no longer have to consider tombstone chains.
+- Opens the door to dropping the `tombstoned_into` self-FK pattern eventually.
+
+**Cons:**
+
+- One more transactional UPDATE inside `applyClusterActions` — small but non-zero.
+- Re-rank already heals it organically; users who regen never see the issue.
+
+**Context:** Discovered during /plan-eng-review on `feat/opportunity-spec-stale-flags` (2026-04-27) when designing the staleness fan-out. The reviewer flagged it as "pre-existing weirdness this PR surfaces but doesn't solve." Decision was to track separately so the staleness PR stays focused.
+
+**How to close:** In `applyClusterActions`, after each MERGE block, run `UPDATE opportunity_to_cluster SET cluster_id = $winner WHERE cluster_id = ANY($loserIds)`. Same RLS-bound tx. Then ditto for `cluster_to_cluster` if any other join tables exist. Watch for unique-constraint conflicts when an opportunity is already linked to both winner and loser — `ON CONFLICT DO NOTHING` handles it.
+
+**Blocked by:** Nothing. Bundle with the next clustering-pipeline change.
