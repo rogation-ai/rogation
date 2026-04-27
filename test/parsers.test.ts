@@ -8,7 +8,7 @@ import { parseEvidenceFile } from "@/lib/evidence/parsers";
   `parseXContent` functions; the File-based wrappers are exercised
   via `parseEvidenceFile` with synthetic File objects.
 
-  PDF is covered only at the dispatcher level — pdf-parse opens a
+  PDF is covered only at the dispatcher level — unpdf opens a
   sandbox that's slow + noisy under vitest. Integration tests on
   real PDFs ride on the upload Route Handler.
 */
@@ -181,12 +181,13 @@ describe("parseEvidenceFile dispatcher", () => {
   // Regression: a static `import { PDFParse } from "pdf-parse"` at the
   // top of pdf.ts crashed the upload route module on load (pdfjs-dist
   // worker init failure), so every upload — including .txt — returned
-  // an HTML 500 page. With the deferred import, a broken pdf-parse
-  // must NOT poison non-PDF parsing.
-  it("parses .txt files even when pdf-parse fails to load", async () => {
+  // an HTML 500 page. With the deferred import, a broken PDF library
+  // must NOT poison non-PDF parsing. Same invariant holds after the
+  // pdf-parse → unpdf swap (Vercel serverless DOMMatrix issue).
+  it("parses .txt files even when unpdf fails to load", async () => {
     vi.resetModules();
-    vi.doMock("pdf-parse", () => {
-      throw new Error("simulated pdfjs-dist worker init failure");
+    vi.doMock("unpdf", () => {
+      throw new Error("simulated unpdf load failure");
     });
     const { parseEvidenceFile: freshParse } = await import(
       "@/lib/evidence/parsers"
@@ -195,14 +196,14 @@ describe("parseEvidenceFile dispatcher", () => {
     const r = await freshParse(f);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.text).toBe("hello world");
-    vi.doUnmock("pdf-parse");
+    vi.doUnmock("unpdf");
     vi.resetModules();
   });
 
-  it("returns a typed parse_failed error when pdf-parse can't load on a PDF", async () => {
+  it("returns a typed parse_failed error when unpdf can't load on a PDF", async () => {
     vi.resetModules();
-    vi.doMock("pdf-parse", () => {
-      throw new Error("simulated pdfjs-dist worker init failure");
+    vi.doMock("unpdf", () => {
+      throw new Error("simulated unpdf load failure");
     });
     const { parseEvidenceFile: freshParse } = await import(
       "@/lib/evidence/parsers"
@@ -211,7 +212,7 @@ describe("parseEvidenceFile dispatcher", () => {
     const r = await freshParse(f);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("parse_failed");
-    vi.doUnmock("pdf-parse");
+    vi.doUnmock("unpdf");
     vi.resetModules();
   });
 });

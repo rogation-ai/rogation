@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.1.1] - 2026-04-27
+
+PDF uploads work again on production.
+
+### Fixed
+
+- **PDF parsing on Vercel serverless.** Swapped `pdf-parse@2` (which wraps `pdfjs-dist` v4 and depends on browser globals like `DOMMatrix`, `ImageData`, `Path2D`, and `@napi-rs/canvas`) for `unpdf` — a serverless-native pdfjs fork that ships pre-bundled without any DOM polyfills. Real-world symptom: `feedback-users-cattus.ai.pdf` and other valid PDFs failed in production with `Couldn't parse: DOMMatrix is not defined. Is it password-protected?`. Same `ParserResult` contract; encrypted PDFs still surface as typed `parse_failed`, scanned PDFs still as `empty`.
+
 ## [0.10.1.0] - 2026-04-27
 
 When evidence shifts, "What to build" and your specs now know they're stale.
