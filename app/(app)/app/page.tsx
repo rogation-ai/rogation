@@ -150,6 +150,11 @@ export default function AppHome(): React.JSX.Element {
         setUploadResults(body.results);
         utils.evidence.count.invalidate();
         utils.account.me.invalidate();
+      } else if ("error" in body) {
+        // 2xx response with non-JSON body (rare: misconfigured proxy /
+        // content-type mismatch). Surface the parse-failure message
+        // instead of silently dropping the result.
+        setUploadResults([{ filename: "", error: body.error }]);
       }
     } catch (err) {
       setUploadResults([
