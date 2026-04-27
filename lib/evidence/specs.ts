@@ -171,6 +171,9 @@ export async function generateSpec(
       contentMd: markdown,
       readinessGrade: grade,
       readinessChecklist: checklist,
+      // Fresh version starts non-stale even if a prior version was
+      // staled by upstream cluster reshape.
+      stale: false,
       promptHash: specGenerate.hash,
     })
     .returning({ id: specs.id });
@@ -337,6 +340,9 @@ export async function* generateSpecStream(
       contentMd: markdown,
       readinessGrade: grade,
       readinessChecklist: checklist,
+      // Streaming generate clears stale on the new version, same as
+      // the blocking generateSpec path.
+      stale: false,
       promptHash: specGenerate.hash,
     })
     .returning({ id: specs.id });
@@ -452,6 +458,9 @@ export async function* refineSpecStream(
       contentMd: markdown,
       readinessGrade: grade,
       readinessChecklist: checklist,
+      // Refine creates a new version row; stale resets even if the
+      // prior version was staled by upstream cluster reshape.
+      stale: false,
       promptHash: specRefine.hash,
     })
     .returning({ id: specs.id });
@@ -532,6 +541,7 @@ export interface SpecRow {
   linearIssueUrl: string | null;
   linearIssueIdentifier: string | null;
   linearPushedAt: Date | null;
+  stale: boolean;
 }
 
 export async function getLatestSpec(
@@ -551,6 +561,7 @@ export async function getLatestSpec(
       linearIssueUrl: specs.linearIssueUrl,
       linearIssueIdentifier: specs.linearIssueIdentifier,
       linearPushedAt: specs.linearPushedAt,
+      stale: specs.stale,
     })
     .from(specs)
     .where(

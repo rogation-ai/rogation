@@ -6,9 +6,15 @@ import {
   evidenceEmbeddings,
   evidenceToCluster,
   insightClusters,
+  opportunities,
+  opportunityToCluster,
+  specs,
   users,
 } from "@/db/schema";
-import { applyClusterActions } from "@/lib/evidence/clustering/apply";
+import {
+  applyClusterActions,
+  markDownstreamStale,
+} from "@/lib/evidence/clustering/apply";
 import { resolveClusterIds } from "@/lib/evidence/clustering/resolve-cluster-id";
 import type { ClusterPlan } from "@/lib/evidence/clustering/actions";
 import { hasTestDb, setupTestDb, type TestDbHandle } from "./setup-db";
@@ -378,6 +384,140 @@ describe.skipIf(!hasTestDb)("applyClusterActions (DB-backed)", () => {
     });
   });
 
+  it("markDownstreamStale: empty trigger set is a no-op", async () => {
+    await handle.db.transaction(async (tx) => {
+      await bind(tx, accountA);
+      const cluster = await insertCluster(tx, accountA, "c", "d", "h");
+      const oppId = await insertOpportunity(tx, accountA, [cluster]);
+      await markDownstreamStale(tx, accountA, new Set());
+      const [row] = await tx
+        .select({ stale: opportunities.stale })
+        .from(opportunities)
+        .where(eq(opportunities.id, oppId));
+      expect(row?.stale).toBe(false);
+    });
+  });
+
+  it("markDownstreamStale: opps linked to trigger cluster get stale + cascade to specs", async () => {
+    await handle.db.transaction(async (tx) => {
+      await bind(tx, accountA);
+      const cluster = await insertCluster(tx, accountA, "c", "d", "h");
+      const otherCluster = await insertCluster(tx, accountA, "other", "d", "h");
+      const linkedOpp = await insertOpportunity(tx, accountA, [cluster]);
+      const unlinkedOpp = await insertOpportunity(tx, accountA, [otherCluster]);
+      const linkedSpec = await insertSpec(tx, accountA, linkedOpp);
+      const unlinkedSpec = await insertSpec(tx, accountA, unlinkedOpp);
+
+      await markDownstreamStale(tx, accountA, new Set([cluster]));
+
+      const [linkedOppRow] = await tx
+        .select({ stale: opportunities.stale })
+        .from(opportunities)
+        .where(eq(opportunities.id, linkedOpp));
+      expect(linkedOppRow?.stale).toBe(true);
+
+      const [unlinkedOppRow] = await tx
+        .select({ stale: opportunities.stale })
+        .from(opportunities)
+        .where(eq(opportunities.id, unlinkedOpp));
+      expect(unlinkedOppRow?.stale).toBe(false);
+
+      const [linkedSpecRow] = await tx
+        .select({ stale: specs.stale })
+        .from(specs)
+        .where(eq(specs.id, linkedSpec));
+      expect(linkedSpecRow?.stale).toBe(true);
+
+      const [unlinkedSpecRow] = await tx
+        .select({ stale: specs.stale })
+        .from(specs)
+        .where(eq(specs.id, unlinkedSpec));
+      expect(unlinkedSpecRow?.stale).toBe(false);
+    });
+  });
+
+  it("MERGE cascades stale=true to linked opportunities + specs", async () => {
+    await handle.db.transaction(async (tx) => {
+      await bind(tx, accountA);
+      // Two clusters; opportunity links to the loser. After MERGE,
+      // the loser is tombstoned → opp + spec must go stale.
+      const winner = await insertCluster(tx, accountA, "winner", "d", "h");
+      const loser = await insertCluster(tx, accountA, "loser", "d", "h");
+      const evW = await insertEvidenceRow(tx, accountA, "w", e(1));
+      const evL = await insertEvidenceRow(tx, accountA, "l", e(0, 1));
+      await attachEdge(tx, evW, winner);
+      await attachEdge(tx, evL, loser);
+      const oppId = await insertOpportunity(tx, accountA, [loser]);
+      const specId = await insertSpec(tx, accountA, oppId);
+
+      const plan: ClusterPlan = {
+        keeps: [],
+        merges: [
+          {
+            winnerId: winner,
+            loserIds: [loser],
+            newTitle: "merged",
+            newDescription: "d",
+          },
+        ],
+        splits: [],
+        newClusters: [],
+        centroidsToRecompute: new Set([winner]),
+      };
+
+      await applyClusterActions(tx, plan, accountA, PROMPT_HASH);
+
+      const [oppRow] = await tx
+        .select({ stale: opportunities.stale })
+        .from(opportunities)
+        .where(eq(opportunities.id, oppId));
+      expect(oppRow?.stale).toBe(true);
+
+      const [specRow] = await tx
+        .select({ stale: specs.stale })
+        .from(specs)
+        .where(eq(specs.id, specId));
+      expect(specRow?.stale).toBe(true);
+    });
+  });
+
+  it("KEEP-only run does NOT stale downstream opportunities (regression guard for D1)", async () => {
+    await handle.db.transaction(async (tx) => {
+      await bind(tx, accountA);
+      const cluster = await insertCluster(tx, accountA, "c", "d", "h");
+      const ev1 = await insertEvidenceRow(tx, accountA, "e1", e(1));
+      const ev2 = await insertEvidenceRow(tx, accountA, "e2", e(0, 1));
+      await attachEdge(tx, ev1, cluster);
+      const oppId = await insertOpportunity(tx, accountA, [cluster]);
+
+      // KEEP that attaches a new evidence row — centroid + frequency
+      // will move, but the cluster set didn't reshape. Per D1, opp
+      // must stay non-stale.
+      const plan: ClusterPlan = {
+        keeps: [
+          {
+            clusterId: cluster,
+            newTitle: null,
+            newDescription: null,
+            attachEvidenceIds: [ev2],
+          },
+        ],
+        merges: [],
+        splits: [],
+        newClusters: [],
+        centroidsToRecompute: new Set([cluster]),
+      };
+
+      await applyClusterActions(tx, plan, accountA, PROMPT_HASH);
+
+      const [oppRow] = await tx
+        .select({ stale: opportunities.stale })
+        .from(opportunities)
+        .where(eq(opportunities.id, oppId));
+      expect(oppRow?.stale).toBe(false);
+    });
+  });
+
   it("RLS: plan referencing an account-B cluster from account-A context is a no-op on B", async () => {
     let bCluster = "";
     await handle.db.transaction(async (tx) => {
@@ -526,4 +666,55 @@ function daysAgo(n: number): Date {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - n);
   return d;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function insertOpportunity(
+  tx: any,
+  accountId: string,
+  linkedClusterIds: string[],
+): Promise<string> {
+  const [row] = await tx
+    .insert(opportunities)
+    .values({
+      accountId,
+      title: "opp",
+      description: "d",
+      reasoning: "r",
+      effortEstimate: "M",
+      score: 1,
+      confidence: 0.5,
+      promptHash: "opphash",
+    })
+    .returning({ id: opportunities.id });
+  if (!row) throw new Error("insertOpportunity failed");
+  if (linkedClusterIds.length > 0) {
+    await tx.insert(opportunityToCluster).values(
+      linkedClusterIds.map((clusterId) => ({
+        opportunityId: row.id,
+        clusterId,
+      })),
+    );
+  }
+  return row.id as string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function insertSpec(
+  tx: any,
+  accountId: string,
+  opportunityId: string,
+): Promise<string> {
+  const [row] = await tx
+    .insert(specs)
+    .values({
+      opportunityId,
+      accountId,
+      version: 1,
+      contentIr: { title: "t", summary: "s" },
+      promptHash: "spechash",
+    })
+    .returning({ id: specs.id });
+  if (!row) throw new Error("insertSpec failed");
+  return row.id as string;
 }
