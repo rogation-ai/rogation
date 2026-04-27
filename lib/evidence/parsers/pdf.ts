@@ -1,4 +1,3 @@
-import type { PDFParse as PDFParseType } from "pdf-parse";
 import {
   MAX_FILE_BYTES,
   tooLargeResult,
@@ -7,16 +6,18 @@ import {
 
 /*
   PDF parser. User-research reports, interview transcripts, internal
-  docs — the #1 thing PMs try to upload. Uses pdf-parse (v2.x, which
-  wraps pdfjs-dist) to extract text from the document.
+  docs — the #1 thing PMs try to upload. Uses `unpdf`, a serverless-
+  native fork of pdfjs-dist that ships pre-bundled without DOM
+  globals (DOMMatrix / ImageData / Path2D) or @napi-rs/canvas. Works
+  inside Vercel's Node functions where vanilla pdfjs-dist v4+ throws.
 
   Caveats (documented, not fixed in v1):
     - Scanned PDFs (images, no text layer) return empty. We error
       cleanly so the user knows to OCR first.
     - Multi-column layouts can interleave columns; for clustering
       that's usually fine since the LLM sees the full blob.
-    - Encrypted/password-protected PDFs throw inside pdf-parse.
-      We surface a typed parse_failed error.
+    - Encrypted/password-protected PDFs throw inside unpdf. We
+      surface a typed parse_failed error.
 */
 
 const PDF_EXT_RE = /\.pdf$/i;
@@ -29,19 +30,16 @@ export function isPdfFile(file: File): boolean {
 export async function parsePdfFile(file: File): Promise<ParserResult> {
   if (file.size > MAX_FILE_BYTES) return tooLargeResult(file);
 
-  let parser: PDFParseType | null = null;
   try {
-    // Deferred import: pdf-parse pulls in pdfjs-dist, which can fail to
-    // initialize in the route's runtime. Loading it lazily keeps that
-    // failure scoped to actual PDF uploads instead of crashing the
-    // route module for every file (including .txt).
-    const { PDFParse } = await import("pdf-parse");
+    // Deferred import keeps any unpdf load failure scoped to actual
+    // PDF uploads instead of crashing the route module for every file.
+    const { extractText, getDocumentProxy } = await import("unpdf");
     const data = new Uint8Array(await file.arrayBuffer());
-    parser = new PDFParse({ data });
-    const result = await parser.getText();
-    const text = result.text.trim();
+    const pdf = await getDocumentProxy(data);
+    const { text } = await extractText(pdf, { mergePages: true });
+    const trimmed = (Array.isArray(text) ? text.join("\n") : text).trim();
 
-    if (!text) {
+    if (!trimmed) {
       return {
         ok: false,
         reason: "empty",
@@ -49,7 +47,7 @@ export async function parsePdfFile(file: File): Promise<ParserResult> {
       };
     }
 
-    return { ok: true, text, mimeType: "application/pdf" };
+    return { ok: true, text: trimmed, mimeType: "application/pdf" };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown error";
     return {
@@ -57,9 +55,5 @@ export async function parsePdfFile(file: File): Promise<ParserResult> {
       reason: "parse_failed",
       detail: `Couldn't parse ${file.name}: ${msg}. Is it password-protected?`,
     };
-  } finally {
-    // Release pdfjs worker + document handles so serverless invocations
-    // don't leak memory across requests.
-    await parser?.destroy().catch(() => {});
   }
 }
