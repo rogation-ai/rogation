@@ -149,9 +149,39 @@ export async function pushSpecToNotion(
     ? `${env.NEXT_PUBLIC_APP_URL}/spec/${opportunityId}`
     : null;
 
+  // Decrypt can throw if INTEGRATION_ENCRYPTION_KEY rotated since the
+  // token was stored. Node surfaces this as "Unsupported state or
+  // unable to authenticate data" — treat as token_invalid so the UI
+  // shows "Reconnect" instead of the raw crypto error.
+  let token: string;
+  try {
+    token = decrypt(cred);
+  } catch (err) {
+    await ctx.db
+      .update(integrationState)
+      .set({
+        status: "token_invalid",
+        lastError:
+          err instanceof Error
+            ? `decrypt failed: ${err.message}`
+            : "decrypt failed",
+      })
+      .where(
+        and(
+          eq(integrationState.accountId, ctx.accountId),
+          eq(integrationState.provider, "notion"),
+        ),
+      );
+    return {
+      ok: false,
+      error: "token-invalid",
+      message:
+        "Stored Notion token can't be read (encryption key changed). Disconnect and reconnect Notion.",
+    };
+  }
+
   let page;
   try {
-    const token = decrypt(cred);
     page = await createSpecPage(token, {
       databaseId,
       title,

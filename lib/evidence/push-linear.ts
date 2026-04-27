@@ -153,10 +153,42 @@ export async function pushSpecToLinear(
     };
   }
 
-  // 5. Call Linear. 401 → mark token_invalid + surface to caller.
+  // 5. Decrypt token, then call Linear.
+  // Decrypt can throw if INTEGRATION_ENCRYPTION_KEY rotated since the
+  // token was stored — Node surfaces this as the cryptic
+  // "Unsupported state or unable to authenticate data". Treat as
+  // token_invalid so the UI shows "Reconnect" instead of the raw
+  // crypto error.
+  let token: string;
+  try {
+    token = decrypt(cred);
+  } catch (err) {
+    await ctx.db
+      .update(integrationState)
+      .set({
+        status: "token_invalid",
+        lastError:
+          err instanceof Error
+            ? `decrypt failed: ${err.message}`
+            : "decrypt failed",
+      })
+      .where(
+        and(
+          eq(integrationState.accountId, ctx.accountId),
+          eq(integrationState.provider, "linear"),
+        ),
+      );
+    return {
+      ok: false,
+      error: "token-invalid",
+      message:
+        "Stored Linear token can't be read (encryption key changed). Disconnect and reconnect Linear.",
+    };
+  }
+
+  // 401 → mark token_invalid + surface to caller.
   let issue;
   try {
-    const token = decrypt(cred);
     issue = await createIssue(token, {
       teamId,
       title,

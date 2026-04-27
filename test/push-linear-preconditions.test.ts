@@ -230,6 +230,42 @@ describe("pushSpecToLinear preconditions", () => {
     );
   });
 
+  it("decrypt failure → token-invalid with reconnect message + state flipped", async () => {
+    // Regression: when INTEGRATION_ENCRYPTION_KEY rotates, decrypt
+    // throws Node's "Unsupported state or unable to authenticate data".
+    // Must surface as token-invalid with a reconnect CTA, not the raw
+    // crypto error.
+    const envelope = await import("@/lib/crypto/envelope");
+    vi.mocked(envelope.decrypt).mockImplementationOnce(() => {
+      throw new Error("Unsupported state or unable to authenticate data");
+    });
+    const tx = makeTx([
+      {
+        id: "s1",
+        contentIr: { title: "t" },
+        contentMd: "md",
+        oppTitle: "opp",
+      },
+      { ciphertext: "ct", nonce: "n" },
+      { config: { defaultTeamId: "t-1" } },
+    ]);
+    const { pushSpecToLinear } = await import("@/lib/evidence/push-linear");
+    const res = await pushSpecToLinear(
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+      { db: tx as any, accountId: "acc-1" },
+      "opp-1",
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toBe("token-invalid");
+      expect(res.message).toMatch(/reconnect/i);
+      expect(res.message).not.toMatch(/unsupported state/i);
+    }
+    const set = tx._updates[0] as Record<string, unknown>;
+    expect(set.status).toBe("token_invalid");
+    expect((set.lastError as string) ?? "").toMatch(/decrypt failed/i);
+  });
+
   it("401 from Linear → token-invalid + state flipped to token_invalid", async () => {
     const client = await import("@/lib/integrations/linear/client");
     vi.mocked(client.createIssue).mockRejectedValueOnce(
