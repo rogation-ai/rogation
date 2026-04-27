@@ -45,6 +45,12 @@ import { withAuthedAccountTx } from "@/server/auth";
   UI surfaces this as a checkbox next to the dropzone.
 */
 
+// Pin to Node runtime — pdf-parse + pdfjs-dist need Node APIs and
+// can't run on the Edge runtime. maxDuration covers worst-case PDF
+// extraction on a 2 MB file.
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const MAX_FILES_PER_BATCH = 20;
 const MAX_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
 

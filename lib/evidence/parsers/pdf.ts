@@ -1,4 +1,4 @@
-import { PDFParse } from "pdf-parse";
+import type { PDFParse as PDFParseType } from "pdf-parse";
 import {
   MAX_FILE_BYTES,
   tooLargeResult,
@@ -29,8 +29,13 @@ export function isPdfFile(file: File): boolean {
 export async function parsePdfFile(file: File): Promise<ParserResult> {
   if (file.size > MAX_FILE_BYTES) return tooLargeResult(file);
 
-  let parser: PDFParse | null = null;
+  let parser: PDFParseType | null = null;
   try {
+    // Deferred import: pdf-parse pulls in pdfjs-dist, which can fail to
+    // initialize in the route's runtime. Loading it lazily keeps that
+    // failure scoped to actual PDF uploads instead of crashing the
+    // route module for every file (including .txt).
+    const { PDFParse } = await import("pdf-parse");
     const data = new Uint8Array(await file.arrayBuffer());
     parser = new PDFParse({ data });
     const result = await parser.getText();

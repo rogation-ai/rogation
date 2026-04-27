@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseVttContent } from "@/lib/evidence/parsers/vtt";
 import { parseCsvContent } from "@/lib/evidence/parsers/csv";
 import { parseEvidenceFile } from "@/lib/evidence/parsers";
@@ -176,5 +176,42 @@ describe("parseEvidenceFile dispatcher", () => {
     const r = await parseEvidenceFile(f);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toBe("empty");
+  });
+
+  // Regression: a static `import { PDFParse } from "pdf-parse"` at the
+  // top of pdf.ts crashed the upload route module on load (pdfjs-dist
+  // worker init failure), so every upload — including .txt — returned
+  // an HTML 500 page. With the deferred import, a broken pdf-parse
+  // must NOT poison non-PDF parsing.
+  it("parses .txt files even when pdf-parse fails to load", async () => {
+    vi.resetModules();
+    vi.doMock("pdf-parse", () => {
+      throw new Error("simulated pdfjs-dist worker init failure");
+    });
+    const { parseEvidenceFile: freshParse } = await import(
+      "@/lib/evidence/parsers"
+    );
+    const f = mkFile("notes.txt", "hello world", "text/plain");
+    const r = await freshParse(f);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.text).toBe("hello world");
+    vi.doUnmock("pdf-parse");
+    vi.resetModules();
+  });
+
+  it("returns a typed parse_failed error when pdf-parse can't load on a PDF", async () => {
+    vi.resetModules();
+    vi.doMock("pdf-parse", () => {
+      throw new Error("simulated pdfjs-dist worker init failure");
+    });
+    const { parseEvidenceFile: freshParse } = await import(
+      "@/lib/evidence/parsers"
+    );
+    const f = mkFile("doc.pdf", "%PDF-1.4", "application/pdf");
+    const r = await freshParse(f);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe("parse_failed");
+    vi.doUnmock("pdf-parse");
+    vi.resetModules();
   });
 });

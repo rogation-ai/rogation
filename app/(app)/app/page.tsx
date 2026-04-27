@@ -131,7 +131,17 @@ export default function AppHome(): React.JSX.Element {
         method: "POST",
         body: form,
       });
-      const body = (await res.json()) as UploadResponse | { error: string };
+      // Defensive parse: if the server returns HTML (e.g. a Next 500
+      // error page or a Clerk redirect), JSON.parse blows up with
+      // "Unexpected token '<'" and hides the real status. Read as text
+      // first, then surface the status code in the error.
+      const text = await res.text();
+      let body: UploadResponse | { error: string };
+      try {
+        body = JSON.parse(text) as UploadResponse | { error: string };
+      } catch {
+        body = { error: `Server error (HTTP ${res.status}). Check server logs.` };
+      }
       if (!res.ok) {
         setUploadResults([
           { filename: "", error: "error" in body ? body.error : "Upload failed" },
@@ -140,6 +150,11 @@ export default function AppHome(): React.JSX.Element {
         setUploadResults(body.results);
         utils.evidence.count.invalidate();
         utils.account.me.invalidate();
+      } else if ("error" in body) {
+        // 2xx response with non-JSON body (rare: misconfigured proxy /
+        // content-type mismatch). Surface the parse-failure message
+        // instead of silently dropping the result.
+        setUploadResults([{ filename: "", error: body.error }]);
       }
     } catch (err) {
       setUploadResults([
