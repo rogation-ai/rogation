@@ -4,6 +4,9 @@ import {
   evidenceEmbeddings,
   evidenceToCluster,
   insightClusters,
+  opportunities,
+  opportunityToCluster,
+  specs,
 } from "@/db/schema";
 import type { Tx } from "@/db/scoped";
 import { centroidOf } from "./knn";
@@ -63,6 +66,13 @@ export async function applyClusterActions(
   promptHash: string,
 ): Promise<ApplyResult> {
   const touched = new Set<string>();
+  // Subset of `touched` that should fan out staleness to downstream
+  // opportunities + specs. Per design (D1 in plan-eng-review):
+  //   MERGE winners + losers, SPLIT origins + children, tombstones → stale
+  //   KEEP (centroid drift only) + NEW (added cluster) → NOT stale
+  // Marking on every KEEP would banner every opportunity on every
+  // re-cluster pass, training PMs to ignore the warning.
+  const staleSourceClusterIds = new Set<string>();
   let clustersCreated = 0;
 
   // Clone plan.centroidsToRecompute so the NEW-cluster insert loop
@@ -121,7 +131,11 @@ export async function applyClusterActions(
   //    winner, update the winner's title/description.
   for (const merge of plan.merges) {
     touched.add(merge.winnerId);
-    for (const id of merge.loserIds) touched.add(id);
+    staleSourceClusterIds.add(merge.winnerId);
+    for (const id of merge.loserIds) {
+      touched.add(id);
+      staleSourceClusterIds.add(id);
+    }
 
     // Move edges from losers → winner. INSERT ON CONFLICT DO NOTHING
     // dedupes if the same evidence was attached to winner + loser.
@@ -184,6 +198,7 @@ export async function applyClusterActions(
   // 3. SPLITs: first child reuses origin row; rest are fresh.
   for (const split of plan.splits) {
     touched.add(split.originId);
+    staleSourceClusterIds.add(split.originId);
 
     // Remove existing edges for the origin. Edges re-materialize per
     // child below.
@@ -247,6 +262,7 @@ export async function applyClusterActions(
         );
       }
       touched.add(inserted.id);
+      staleSourceClusterIds.add(inserted.id);
       clustersCreated += 1;
       if (child.evidenceIds.length > 0) {
         await insertEdges(
@@ -311,10 +327,88 @@ export async function applyClusterActions(
   // 6. Stale wiring. One pass after all writes.
   await updateStaleness(tx, accountId, touched);
 
+  // 7. Fan staleness out to downstream artifacts. Opportunities linked
+  //    to MERGE/SPLIT/tombstone clusters get stale=true; specs of
+  //    those opportunities get stale=true. Cleared by regen
+  //    (runFullOpportunities / generateSpec).
+  await markDownstreamStale(tx, accountId, staleSourceClusterIds);
+
   return {
     clustersCreated,
     touchedClusterIds: touched,
   };
+}
+
+/**
+ * Fan-out staleness from reshaped clusters to downstream artifacts.
+ *
+ * Trigger set (per design D1): MERGE winners + losers, SPLIT origins
+ * + freshly-inserted children, tombstones. NOT KEEPs or NEWs — see
+ * the rationale at the staleSourceClusterIds declaration site.
+ *
+ * Two updates, both set-based:
+ *   1. Mark every opportunity whose opportunity_to_cluster row points
+ *      at one of the trigger clusters.
+ *   2. Mark every spec whose opportunity_id is one of the staled
+ *      opportunities.
+ *
+ * Empty trigger set → no-op (no UPDATE statements issued).
+ *
+ * Caller owns the transaction. Both updates run inside the same RLS-
+ * bound tx as applyClusterActions, so a rollback unwinds both.
+ *
+ * Exported for unit testing against a stub tx.
+ */
+export async function markDownstreamStale(
+  tx: Tx,
+  accountId: string,
+  clusterIds: ReadonlySet<string>,
+): Promise<void> {
+  if (clusterIds.size === 0) return;
+
+  const ids = Array.from(clusterIds);
+
+  // Step 1: collect the opportunity ids whose links touch any
+  // trigger cluster. We materialize the list (rather than using a
+  // single UPDATE … WHERE EXISTS) so step 2 can reuse it for the
+  // spec cascade without re-running the join.
+  const linkedOpps = await tx
+    .selectDistinct({ opportunityId: opportunityToCluster.opportunityId })
+    .from(opportunityToCluster)
+    .innerJoin(
+      opportunities,
+      eq(opportunityToCluster.opportunityId, opportunities.id),
+    )
+    .where(
+      and(
+        eq(opportunities.accountId, accountId),
+        inArray(opportunityToCluster.clusterId, ids),
+      ),
+    );
+
+  if (linkedOpps.length === 0) return;
+
+  const oppIds = linkedOpps.map((r) => r.opportunityId);
+
+  await tx
+    .update(opportunities)
+    .set({ stale: true, updatedAt: new Date() })
+    .where(
+      and(
+        eq(opportunities.accountId, accountId),
+        inArray(opportunities.id, oppIds),
+      ),
+    );
+
+  await tx
+    .update(specs)
+    .set({ stale: true, updatedAt: new Date() })
+    .where(
+      and(
+        eq(specs.accountId, accountId),
+        inArray(specs.opportunityId, oppIds),
+      ),
+    );
 }
 
 /**

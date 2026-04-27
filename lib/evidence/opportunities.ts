@@ -208,6 +208,10 @@ async function persistOpportunities(
       score,
       confidence: o.confidence,
       status: "open" as const,
+      // Explicit fresh state. The DB default is false, but stating it
+      // here documents the regen contract: every wipe-and-reinsert
+      // pass clears stale on the new rows.
+      stale: false,
       promptHash: opportunityScore.hash,
       clusterIds,
     };
@@ -466,6 +470,7 @@ export interface OpportunityRow {
   score: number;
   confidence: number;
   status: "open" | "in_progress" | "shipped" | "archived";
+  stale: boolean;
   linkedClusterIds: string[];
 }
 
@@ -483,6 +488,7 @@ export async function listOpportunities(
       score: opportunitiesTbl.score,
       confidence: opportunitiesTbl.confidence,
       status: opportunitiesTbl.status,
+      stale: opportunitiesTbl.stale,
     })
     .from(opportunitiesTbl)
     .where(eq(opportunitiesTbl.accountId, ctx.accountId))

@@ -344,6 +344,11 @@ export const opportunities = pgTable(
     score: real("score").notNull().default(0),
     confidence: real("confidence").notNull().default(0),
     status: opportunityStatus("status").notNull().default("open"),
+    // Set true by applyClusterActions when an upstream cluster is
+    // MERGEd, SPLIT, or tombstoned. Cleared back to false on the next
+    // runFullOpportunities() call. Drives the "Re-rank to refresh"
+    // banner on /build.
+    stale: boolean("stale").notNull().default(false),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -424,6 +429,11 @@ export const specs = pgTable(
     linearIssueIdentifier: text("linear_issue_identifier"),
     linearIssueUrl: text("linear_issue_url"),
     linearPushedAt: timestamp("linear_pushed_at", { withTimezone: true }),
+    // Set true when the linked opportunity gets staled by re-clustering.
+    // Cleared on regenerate (new version row inserts with stale=false).
+    // Drives the page-level "Source clusters changed" banner on
+    // /spec/[opportunityId].
+    stale: boolean("stale").notNull().default(false),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

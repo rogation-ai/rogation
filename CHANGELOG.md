@@ -4,6 +4,22 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.1.0] - 2026-04-27
+
+When evidence shifts, "What to build" and your specs now know they're stale.
+
+### Added
+
+- **Stale banners on /build and /spec.** When re-clustering reshapes a cluster (merge, split, or removal), the opportunities derived from that cluster now show a "Linked clusters changed. Re-rank to refresh." banner on the card. Click it to regenerate. Specs whose source clusters changed show a page-level banner explaining that regenerating will create a new version and start a new chat thread. No more silently looking at opportunities and specs that were derived from evidence you've since deleted or reshaped.
+- **`opportunity.stale` and `spec.stale` columns.** Set automatically by the cluster apply path on MERGE/SPLIT/tombstone. Cleared automatically on regeneration. Plain refresh runs that only update centroids or attach new evidence (KEEP) do NOT mark anything stale, so the banner doesn't cry wolf on every re-cluster.
+
+### Changed
+
+- **`trpc.opportunities.list` returns `stale`.** Existing callers keep working; the field is additive.
+- **`trpc.specs.getLatest` returns `stale`.** Same — additive.
+
+---
+
 ## [0.10.0.0] - 2026-04-23
 
 Incremental re-clustering. Re-clustering is now fast, cheap, and stays out of your way.
