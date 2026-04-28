@@ -1,8 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { evidence } from "@/db/schema";
+import { evidence, evidenceToCluster } from "@/db/schema";
 import { ingestEvidence } from "@/lib/evidence/ingest";
+import { recomputeClusterAggregates } from "@/lib/evidence/clustering/apply";
 import { seedSampleEvidence } from "@/lib/evidence/sample-seed";
 import { countResource } from "@/lib/plans";
 import { authedProcedure, router } from "@/server/trpc";
@@ -84,6 +85,19 @@ export const evidenceRouter = router({
   delete: authedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      // Capture cluster ids the evidence was attached to BEFORE the
+      // cascade wipes evidence_to_cluster — we need them to recompute
+      // each cluster's frequency + centroid post-delete. Without this,
+      // clusters keep stale aggregates (and stale rows show up in
+      // /insights even after their evidence is gone).
+      const edges = await ctx.db
+        .select({ clusterId: evidenceToCluster.clusterId })
+        .from(evidenceToCluster)
+        .where(eq(evidenceToCluster.evidenceId, input.id));
+      const affectedClusterIds = Array.from(
+        new Set(edges.map((e) => e.clusterId)),
+      );
+
       const result = await ctx.db
         .delete(evidence)
         .where(
@@ -99,6 +113,10 @@ export const evidenceRouter = router({
           code: "NOT_FOUND",
           message: "Evidence not found",
         });
+      }
+
+      for (const clusterId of affectedClusterIds) {
+        await recomputeClusterAggregates(ctx.db, clusterId, ctx.accountId);
       }
 
       return { id: result[0]!.id };

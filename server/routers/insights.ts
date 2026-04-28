@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { insightClusters, insightRuns } from "@/db/schema";
 import {
@@ -69,7 +69,13 @@ export const insightsRouter = router({
           frequency: insightClusters.frequency,
         })
         .from(insightClusters)
-        .where(inArray(insightClusters.id, input.clusterIds));
+        .where(
+          and(
+            inArray(insightClusters.id, input.clusterIds),
+            isNull(insightClusters.tombstonedInto),
+            gt(insightClusters.frequency, 0),
+          ),
+        );
     }),
 
   run: authedProcedure.mutation(async ({ ctx }) => {

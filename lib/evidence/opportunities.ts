@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
   insightClusters,
   opportunities as opportunitiesTbl,
@@ -76,7 +76,13 @@ export async function runFullOpportunities(
       frequency: insightClusters.frequency,
     })
     .from(insightClusters)
-    .where(eq(insightClusters.accountId, ctx.accountId))
+    .where(
+      and(
+        eq(insightClusters.accountId, ctx.accountId),
+        isNull(insightClusters.tombstonedInto),
+        gt(insightClusters.frequency, 0),
+      ),
+    )
     .orderBy(desc(insightClusters.frequency))
     .limit(MAX_CLUSTERS_PER_RUN + 1);
 
