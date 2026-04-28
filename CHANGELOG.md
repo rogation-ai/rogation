@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.2.0] - 2026-04-28
+
+Operator script to wipe a user's content without nuking their account.
+
+### Added
+
+- **`scripts/purge-user-data.ts`.** Resolves a user by `--email` or `--clerk-id`, then deletes every account-scoped row across evidence, clusters, runs, opportunities, scoring weights, specs, refinements, outcomes, activity log, entity feedback, integration credentials/state, and monthly LLM usage. The user row, account row, and Stripe linkage stay intact so billing and Clerk auth keep working — only generated/imported content is wiped. Supports `--dry-run`: counts every table inside a transaction, then rolls back. Verifies the user + account rows are still present after the purge so a future schema change that accidentally deletes them fails loud instead of silent. Useful for support flows ("reset my workspace, keep my login") and for resetting test accounts between manual QA passes.
+
 ## [0.10.1.2] - 2026-04-28
 
 Deleting old evidence no longer leaves zombie clusters on /insights.
