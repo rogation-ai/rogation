@@ -30,10 +30,16 @@ import { hasTestDb, setupTestDb, type TestDbHandle } from "./setup-db";
 describe.skipIf(!hasTestDb)("opportunities orphan filter", () => {
   let handle: TestDbHandle;
   let accountA: string;
+  let accountB: string;
 
   beforeAll(async () => {
     handle = await setupTestDb("opps_orphan_filter");
     accountA = await seedAccount(handle, "a-orphan@test.dev");
+    // Separate account for the wipe test — handle.db.transaction
+    // commits at the end, so cluster rows from the first test would
+    // otherwise leak into the second's `runFullOpportunities` call
+    // and trigger a real LLM call (no API key in CI).
+    accountB = await seedAccount(handle, "b-orphan@test.dev");
   });
 
   afterAll(async () => {
@@ -74,15 +80,15 @@ describe.skipIf(!hasTestDb)("opportunities orphan filter", () => {
 
   it("runFullOpportunities wipes prior opps when no live clusters remain", async () => {
     await handle.db.transaction(async (tx) => {
-      await bind(tx, accountA);
+      await bind(tx, accountB);
       // All clusters orphan: simulates "user deleted every piece of
       // evidence." Should not throw — should wipe.
-      const orphan = await insertCluster(tx, accountA, 0);
-      await insertOpportunity(tx, accountA, [orphan]);
+      const orphan = await insertCluster(tx, accountB, 0);
+      await insertOpportunity(tx, accountB, [orphan]);
 
       const result = await runFullOpportunities({
         db: tx,
-        accountId: accountA,
+        accountId: accountB,
       });
       expect(result.opportunitiesCreated).toBe(0);
       expect(result.clustersUsed).toBe(0);
@@ -90,7 +96,7 @@ describe.skipIf(!hasTestDb)("opportunities orphan filter", () => {
       const remaining = await tx
         .select({ id: opportunities.id })
         .from(opportunities)
-        .where(eq(opportunities.accountId, accountA));
+        .where(eq(opportunities.accountId, accountB));
       expect(remaining).toHaveLength(0);
     });
   });
