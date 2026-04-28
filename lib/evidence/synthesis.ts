@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import {
   evidence,
   evidenceToCluster,
@@ -179,7 +179,13 @@ export async function listClusters(
       updatedAt: insightClusters.updatedAt,
     })
     .from(insightClusters)
-    .where(eq(insightClusters.accountId, ctx.accountId))
+    .where(
+      and(
+        eq(insightClusters.accountId, ctx.accountId),
+        isNull(insightClusters.tombstonedInto),
+        gt(insightClusters.frequency, 0),
+      ),
+    )
     .orderBy(desc(insightClusters.frequency));
 }
 
@@ -201,7 +207,13 @@ export async function getClusterDetail(
       updatedAt: insightClusters.updatedAt,
     })
     .from(insightClusters)
-    .where(eq(insightClusters.id, clusterId))
+    .where(
+      and(
+        eq(insightClusters.id, clusterId),
+        isNull(insightClusters.tombstonedInto),
+        gt(insightClusters.frequency, 0),
+      ),
+    )
     .limit(1);
 
   if (!cluster) return null;

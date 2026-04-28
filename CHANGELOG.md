@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.1.2] - 2026-04-28
+
+Deleting old evidence no longer leaves zombie clusters on /insights.
+
+### Fixed
+
+- **Orphan clusters after evidence delete.** Clusters whose evidence was fully deleted kept appearing on /insights with stale frequency counts. Two compounding causes: (1) `trpc.insights.list` / `detail` / `byIds` returned every row regardless of whether it still had evidence attached, and (2) `evidence.delete` cascaded `evidence_to_cluster` rows but never recomputed `insight_clusters.frequency` or `centroid`, so the stored aggregates lagged reality forever. Both paths now filter by `frequency > 0 AND tombstoned_into IS NULL`, and `evidence.delete` calls `recomputeClusterAggregates` for every cluster the deleted row was attached to. `runFullOpportunities` applies the same filter so orphans never feed the LLM either. Clusters that transition to `frequency = 0` from a delete also fan out staleness via `markDownstreamStale` — linked opportunities + specs flip `stale = true` so PMs see "regenerate to refresh" instead of citing a cluster that no longer appears on /insights. Partial shrinks (cluster of 50 loses 1) stay quiet.
+
 ## [0.10.1.1] - 2026-04-27
 
 PDF uploads work again on production.
