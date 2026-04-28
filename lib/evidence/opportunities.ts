@@ -87,9 +87,19 @@ export async function runFullOpportunities(
     .limit(MAX_CLUSTERS_PER_RUN + 1);
 
   if (clusters.length === 0) {
-    throw new Error(
-      "No clusters to score — run synthesis first (Insights > Generate clusters).",
-    );
+    // Every cluster went orphan (e.g., evidence deleted). Wipe any
+    // prior opportunities so the UI doesn't keep rendering citations
+    // that point at dead clusters, then return without an LLM call.
+    // Mirrors the insights filter — if no clusters exist, no opps
+    // should either.
+    await ctx.db
+      .delete(opportunitiesTbl)
+      .where(eq(opportunitiesTbl.accountId, ctx.accountId));
+    return {
+      opportunitiesCreated: 0,
+      clustersUsed: 0,
+      promptHash: opportunityScore.hash,
+    };
   }
   if (clusters.length > MAX_CLUSTERS_PER_RUN) {
     throw new Error(
@@ -501,6 +511,12 @@ export async function listOpportunities(
     .orderBy(desc(opportunitiesTbl.score));
 
   const oppIds = opps.map((o) => o.id);
+  // Join edges against insight_cluster so a dead cluster (frequency=0
+  // or tombstoned) drops out of linkedClusterIds. An opp with zero
+  // live edges is filtered from the returned list — same semantic as
+  // /insights hiding orphan clusters. The opp row itself is kept in
+  // the DB (status / stale flag preserve user state if a re-cluster
+  // brings the data back).
   const edges =
     oppIds.length > 0
       ? await ctx.db
@@ -509,7 +525,17 @@ export async function listOpportunities(
             clusterId: opportunityToCluster.clusterId,
           })
           .from(opportunityToCluster)
-          .where(inArray(opportunityToCluster.opportunityId, oppIds))
+          .innerJoin(
+            insightClusters,
+            eq(insightClusters.id, opportunityToCluster.clusterId),
+          )
+          .where(
+            and(
+              inArray(opportunityToCluster.opportunityId, oppIds),
+              isNull(insightClusters.tombstonedInto),
+              gt(insightClusters.frequency, 0),
+            ),
+          )
       : [];
 
   const oppToClusters = new Map<string, string[]>();
@@ -519,11 +545,13 @@ export async function listOpportunities(
     oppToClusters.set(e.opportunityId, list);
   }
 
-  return opps.map((o) => ({
-    ...o,
-    impactEstimate: (o.impactEstimate ?? {}) as OpportunityPrimitive["impact"],
-    linkedClusterIds: oppToClusters.get(o.id) ?? [],
-  }));
+  return opps
+    .filter((o) => (oppToClusters.get(o.id)?.length ?? 0) > 0)
+    .map((o) => ({
+      ...o,
+      impactEstimate: (o.impactEstimate ?? {}) as OpportunityPrimitive["impact"],
+      linkedClusterIds: oppToClusters.get(o.id) ?? [],
+    }));
 }
 
 export async function listOpportunitiesForCluster(

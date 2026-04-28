@@ -4,6 +4,22 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.2.1] - 2026-04-28
+
+Stale opportunities disappear from /build when their evidence is gone.
+
+### Fixed
+
+- **Orphan opportunities lingered on /build.** v0.10.1.2 dropped orphan clusters from /insights and flipped linked opportunities to `stale = true`, but stopped short of hiding the opportunities themselves. Result: PMs deleted the last piece of evidence behind a cluster, watched it disappear from /insights, then saw the opportunity card stay put on /build — re-ranking didn't clear it, and "Regenerate" threw `No clusters to score` if every cluster went orphan in one pass. `listOpportunities` now joins `opportunity_to_cluster` against `insight_cluster` and only returns opps with at least one live linked cluster (`frequency > 0 AND tombstoned_into IS NULL`); the same join trims dead cluster ids out of `linkedClusterIds` so citation chips never deep-link to a hidden insight. `runFullOpportunities` no longer throws on zero live clusters — it wipes any prior opportunities and returns `0` so the regen path matches the read path. Opportunity rows themselves are kept in the DB so a re-cluster can revive them with their old `status` and feedback intact.
+
+## [0.10.2.0] - 2026-04-28
+
+Operator script to wipe a user's content without nuking their account.
+
+### Added
+
+- **`scripts/purge-user-data.ts`.** Resolves a user by `--email` or `--clerk-id`, then deletes every account-scoped row across evidence, clusters, runs, opportunities, scoring weights, specs, refinements, outcomes, activity log, entity feedback, integration credentials/state, and monthly LLM usage. The user row, account row, and Stripe linkage stay intact so billing and Clerk auth keep working — only generated/imported content is wiped. Supports `--dry-run`: counts every table inside a transaction, then rolls back. Verifies the user + account rows are still present after the purge so a future schema change that accidentally deletes them fails loud instead of silent. Useful for support flows ("reset my workspace, keep my login") and for resetting test accounts between manual QA passes.
+
 ## [0.10.1.2] - 2026-04-28
 
 Deleting old evidence no longer leaves zombie clusters on /insights.
