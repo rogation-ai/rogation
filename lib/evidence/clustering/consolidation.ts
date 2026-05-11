@@ -185,17 +185,25 @@ export async function runConsolidationPass(
     );
   const winnerById = new Map(winners.map((w) => [w.id, w]));
 
-  const plan: ClusterPlan = {
-    keeps: [],
-    merges: Array.from(grouped.entries()).map(([winnerId, entries]) => {
-      const w = winnerById.get(winnerId);
+  const planMerges = Array.from(grouped.entries())
+    .filter(([winnerId]) => winnerById.has(winnerId))
+    .map(([winnerId, entries]) => {
+      const w = winnerById.get(winnerId)!;
       return {
         winnerId,
         loserIds: entries.map((e) => e.loserId),
-        newTitle: w?.title ?? "",
-        newDescription: w?.description ?? "",
+        newTitle: w.title,
+        newDescription: w.description,
       };
-    }),
+    });
+
+  if (planMerges.length === 0) {
+    return { consolidated: 0, unmerged: unmerged + merges.length };
+  }
+
+  const plan: ClusterPlan = {
+    keeps: [],
+    merges: planMerges,
     splits: [],
     newClusters: [],
     centroidsToRecompute: new Set(winnerIds),
