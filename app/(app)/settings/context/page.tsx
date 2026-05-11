@@ -7,7 +7,8 @@ const MAX_BRIEF_BYTES = 8_192;
 const DEBOUNCE_MS = 1_500;
 
 const STAGES = ["Pre-seed", "Seed", "Series A", "Series B", "Growth", "Public"] as const;
-const METRICS = ["Retention", "Revenue", "Activation", "NPS", "Custom"] as const;
+const METRIC_OPTIONS = ["Retention", "Revenue", "Activation", "NPS", "Custom"] as const;
+type MetricOption = (typeof METRIC_OPTIONS)[number];
 
 function byteLength(s: string): number {
   return new TextEncoder().encode(s).length;
@@ -32,23 +33,21 @@ export default function ProductContextPage(): React.JSX.Element {
   const [brief, setBrief] = useState("");
   const [icp, setIcp] = useState("");
   const [stage, setStage] = useState("");
-  const [metric, setMetric] = useState("");
-  const [shipped, setShipped] = useState("");
-  const [roadmap, setRoadmap] = useState("");
+  const [selectedMetrics, setSelectedMetrics] = useState<MetricOption[]>([]);
+  const [customMetric, setCustomMetric] = useState("");
 
   const [savedFields, setSavedFields] = useState<Record<string, boolean>>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const latestState = useRef({ brief, icp, stage, metric, shipped, roadmap });
-  latestState.current = { brief, icp, stage, metric, shipped, roadmap };
+  const latestState = useRef({ brief, icp, stage, selectedMetrics, customMetric });
+  latestState.current = { brief, icp, stage, selectedMetrics, customMetric };
 
   useEffect(() => {
     if (!data) return;
     setBrief(data.productBrief ?? "");
     setIcp(data.productBriefStructured?.icp ?? "");
     setStage(data.productBriefStructured?.stage ?? "");
-    setMetric(data.productBriefStructured?.primaryMetric ?? "");
-    setShipped(data.productBriefStructured?.featuresShipped?.join("\n") ?? "");
-    setRoadmap(data.productBriefStructured?.roadmapTop?.join("\n") ?? "");
+    setSelectedMetrics((data.productBriefStructured?.primaryMetrics as MetricOption[]) ?? []);
+    setCustomMetric(data.productBriefStructured?.customMetric ?? "");
   }, [data]);
 
   const showSaved = useCallback((field: string) => {
@@ -71,13 +70,8 @@ export default function ProductContextPage(): React.JSX.Element {
           productBriefStructured: {
             icp: s.icp || undefined,
             stage: (s.stage as (typeof STAGES)[number]) || undefined,
-            primaryMetric: (s.metric as (typeof METRICS)[number]) || undefined,
-            featuresShipped: s.shipped
-              ? s.shipped.split("\n").filter((l) => l.trim()).slice(0, 5)
-              : undefined,
-            roadmapTop: s.roadmap
-              ? s.roadmap.split("\n").filter((l) => l.trim()).slice(0, 5)
-              : undefined,
+            primaryMetrics: s.selectedMetrics.length > 0 ? s.selectedMetrics : undefined,
+            customMetric: s.customMetric || undefined,
           },
         },
         { onSuccess: () => showSaved(field) },
@@ -94,6 +88,22 @@ export default function ProductContextPage(): React.JSX.Element {
     [save],
   );
 
+  const toggleMetric = useCallback(
+    (metric: MetricOption) => {
+      setSelectedMetrics((prev) => {
+        const next = prev.includes(metric)
+          ? prev.filter((m) => m !== metric)
+          : [...prev, metric];
+        setTimeout(() => {
+          latestState.current.selectedMetrics = next;
+          save("metrics");
+        }, 0);
+        return next;
+      });
+    },
+    [save],
+  );
+
   const briefBytes = byteLength(brief);
   const counterClass =
     briefBytes >= MAX_BRIEF_BYTES
@@ -101,6 +111,8 @@ export default function ProductContextPage(): React.JSX.Element {
       : briefBytes >= MAX_BRIEF_BYTES * 0.8
         ? "text-[var(--color-warning)]"
         : "text-[var(--color-text-tertiary)]";
+
+  const showCustomInput = selectedMetrics.includes("Custom");
 
   if (isLoading) {
     return (
@@ -175,104 +187,74 @@ export default function ProductContextPage(): React.JSX.Element {
           />
         </div>
 
-        {/* Stage + Metric */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="stage" className="text-sm font-medium">
-                Stage
-              </label>
-              <SavedIndicator visible={!!savedFields.stage} />
-            </div>
-            <select
-              id="stage"
-              value={stage}
-              onChange={(e) => {
-                setStage(e.target.value);
-                save("stage");
-              }}
-              className="w-full p-2.5 border border-[var(--color-border-default)] rounded-[var(--radius-sm)] text-base bg-transparent focus:outline-none focus:border-[var(--color-brand-accent)] focus:ring-2 focus:ring-[var(--color-brand-accent)]/15"
-            >
-              <option value="" disabled>
-                Select stage
-              </option>
-              {STAGES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+        {/* Stage */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-1.5">
+            <label htmlFor="stage" className="text-sm font-medium">
+              Stage
+            </label>
+            <SavedIndicator visible={!!savedFields.stage} />
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="metric" className="text-sm font-medium">
-                Primary metric
-              </label>
-              <SavedIndicator visible={!!savedFields.metric} />
-            </div>
-            <select
-              id="metric"
-              value={metric}
-              onChange={(e) => {
-                setMetric(e.target.value);
-                save("metric");
-              }}
-              className="w-full p-2.5 border border-[var(--color-border-default)] rounded-[var(--radius-sm)] text-base bg-transparent focus:outline-none focus:border-[var(--color-brand-accent)] focus:ring-2 focus:ring-[var(--color-brand-accent)]/15"
-            >
-              <option value="" disabled>
-                Select primary metric
+          <select
+            id="stage"
+            value={stage}
+            onChange={(e) => {
+              setStage(e.target.value);
+              save("stage");
+            }}
+            className="w-full p-2.5 border border-[var(--color-border-default)] rounded-[var(--radius-sm)] text-base bg-transparent focus:outline-none focus:border-[var(--color-brand-accent)] focus:ring-2 focus:ring-[var(--color-brand-accent)]/15"
+          >
+            <option value="" disabled>
+              Select stage
+            </option>
+            {STAGES.map((s) => (
+              <option key={s} value={s}>
+                {s}
               </option>
-              {METRICS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
+            ))}
+          </select>
         </div>
 
-        {/* Features + Roadmap */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="shipped" className="text-sm font-medium">
-                Features shipped
-              </label>
-              <SavedIndicator visible={!!savedFields.shipped} />
-            </div>
-            <textarea
-              id="shipped"
-              value={shipped}
-              onChange={(e) => {
-                setShipped(e.target.value);
-                debouncedSave("shipped");
-              }}
-              onBlur={() => save("shipped")}
-              rows={4}
-              placeholder={"One feature per line\ne.g. Onboarding flow\nReal-time dashboard"}
-              className="w-full p-3 border border-[var(--color-border-default)] rounded-[var(--radius-sm)] text-base leading-relaxed resize-y focus:outline-none focus:border-[var(--color-brand-accent)] focus:ring-2 focus:ring-[var(--color-brand-accent)]/15"
-            />
+        {/* Primary Metrics (multi-select checkboxes) */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-sm font-medium">Primary metrics</span>
+            <SavedIndicator visible={!!savedFields.metrics} />
           </div>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="roadmap" className="text-sm font-medium">
-                Roadmap
-              </label>
-              <SavedIndicator visible={!!savedFields.roadmap} />
-            </div>
-            <textarea
-              id="roadmap"
-              value={roadmap}
-              onChange={(e) => {
-                setRoadmap(e.target.value);
-                debouncedSave("roadmap");
-              }}
-              onBlur={() => save("roadmap")}
-              rows={4}
-              placeholder={"One item per line\ne.g. Mobile app\nAPI v2"}
-              className="w-full p-3 border border-[var(--color-border-default)] rounded-[var(--radius-sm)] text-base leading-relaxed resize-y focus:outline-none focus:border-[var(--color-brand-accent)] focus:ring-2 focus:ring-[var(--color-brand-accent)]/15"
-            />
+          <div className="flex flex-wrap gap-2">
+            {METRIC_OPTIONS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => toggleMetric(m)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-[var(--radius-sm)] border transition-colors ${
+                  selectedMetrics.includes(m)
+                    ? "border-[var(--color-brand-accent)] bg-[var(--color-brand-accent)]/10 text-[var(--color-brand-accent)]"
+                    : "border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
           </div>
+
+          {/* Custom metric text input */}
+          {showCustomInput && (
+            <div className="mt-3">
+              <input
+                type="text"
+                value={customMetric}
+                onChange={(e) => {
+                  setCustomMetric(e.target.value);
+                  debouncedSave("customMetric");
+                }}
+                onBlur={() => save("customMetric")}
+                maxLength={120}
+                placeholder="Describe your custom metric"
+                className="w-full p-2.5 border border-[var(--color-border-default)] rounded-[var(--radius-sm)] text-base focus:outline-none focus:border-[var(--color-brand-accent)] focus:ring-2 focus:ring-[var(--color-brand-accent)]/15"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -285,9 +267,8 @@ export default function ProductContextPage(): React.JSX.Element {
           brief={brief}
           icp={icp}
           stage={stage}
-          metric={metric}
-          shipped={shipped}
-          roadmap={roadmap}
+          selectedMetrics={selectedMetrics}
+          customMetric={customMetric}
         />
       </aside>
     </div>
@@ -298,18 +279,17 @@ function ContextPreview({
   brief,
   icp,
   stage,
-  metric,
-  shipped,
-  roadmap,
+  selectedMetrics,
+  customMetric,
 }: {
   brief: string;
   icp: string;
   stage: string;
-  metric: string;
-  shipped: string;
-  roadmap: string;
+  selectedMetrics: string[];
+  customMetric: string;
 }) {
-  const hasAny = brief.trim() || icp.trim() || stage || metric || shipped.trim() || roadmap.trim();
+  const hasAny =
+    brief.trim() || icp.trim() || stage || selectedMetrics.length > 0 || customMetric.trim();
 
   if (!hasAny) {
     return (
@@ -323,14 +303,11 @@ function ContextPreview({
   if (brief.trim()) lines.push(`Product brief:\n  ${brief.trim()}`);
   if (icp.trim()) lines.push(`ICP: ${icp.trim()}`);
   if (stage) lines.push(`Stage: ${stage}`);
-  if (metric) lines.push(`Primary metric: ${metric}`);
-  if (shipped.trim()) {
-    const items = shipped.split("\n").filter((l) => l.trim()).slice(0, 5);
-    if (items.length) lines.push(`Features shipped:\n${items.map((l) => `  ${l.trim()}`).join("\n")}`);
-  }
-  if (roadmap.trim()) {
-    const items = roadmap.split("\n").filter((l) => l.trim()).slice(0, 5);
-    if (items.length) lines.push(`Roadmap:\n${items.map((l) => `  ${l.trim()}`).join("\n")}`);
+  if (selectedMetrics.length > 0) {
+    const display = selectedMetrics
+      .map((m) => (m === "Custom" && customMetric.trim() ? `Custom (${customMetric.trim()})` : m))
+      .join(", ");
+    lines.push(`Primary metrics: ${display}`);
   }
 
   return (

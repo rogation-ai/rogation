@@ -24,9 +24,8 @@ export function hasNonEmptyContext(
   return !!(
     structured.icp?.trim() ||
     structured.stage?.trim() ||
-    structured.primaryMetric?.trim() ||
-    (structured.featuresShipped && structured.featuresShipped.some((s) => s.trim())) ||
-    (structured.roadmapTop && structured.roadmapTop.some((s) => s.trim()))
+    (structured.primaryMetrics && structured.primaryMetrics.some((s) => s.trim())) ||
+    structured.customMetric?.trim()
   );
 }
 
@@ -59,24 +58,15 @@ export function assembleContextBundle(
       fields.push(`<icp>${escapeField(structured.icp.trim())}</icp>`);
     if (structured.stage?.trim())
       fields.push(`<stage>${escapeField(structured.stage.trim())}</stage>`);
-    if (structured.primaryMetric?.trim())
-      fields.push(`<primary_metric>${escapeField(structured.primaryMetric.trim())}</primary_metric>`);
-    if (structured.featuresShipped?.length) {
-      const items = structured.featuresShipped
-        .filter((s) => s.trim())
-        .slice(0, 5)
-        .map((s) => `<item>${escapeField(s.trim())}</item>`)
-        .join("");
-      if (items) fields.push(`<features_shipped>${items}</features_shipped>`);
+    if (structured.primaryMetrics?.length) {
+      const metrics = structured.primaryMetrics.filter((s) => s.trim());
+      if (metrics.length) {
+        const items = metrics.map((s) => `<item>${escapeField(s.trim())}</item>`).join("");
+        fields.push(`<primary_metrics>${items}</primary_metrics>`);
+      }
     }
-    if (structured.roadmapTop?.length) {
-      const items = structured.roadmapTop
-        .filter((s) => s.trim())
-        .slice(0, 5)
-        .map((s) => `<item>${escapeField(s.trim())}</item>`)
-        .join("");
-      if (items) fields.push(`<roadmap>${items}</roadmap>`);
-    }
+    if (structured.customMetric?.trim())
+      fields.push(`<custom_metric>${escapeField(structured.customMetric.trim())}</custom_metric>`);
     if (fields.length > 0) {
       parts.push(`<structured>${fields.join("")}</structured>`);
     }
@@ -90,10 +80,7 @@ export function assembleContextBundle(
     return { block, truncated: false };
   }
 
-  // Priority drop: roadmap -> structured -> brief only
-  if (structured?.roadmapTop?.length) {
-    return assembleContextBundle(brief, { ...structured, roadmapTop: undefined });
-  }
+  // Priority drop: structured -> brief only
   if (structured) {
     return assembleContextBundle(brief, null);
   }

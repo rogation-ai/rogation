@@ -153,9 +153,8 @@ export const accounts = pgTable(
 export interface ProductBriefStructured {
   icp?: string;
   stage?: string;
-  primaryMetric?: string;
-  featuresShipped?: string[];
-  roadmapTop?: string[];
+  primaryMetrics?: string[];
+  customMetric?: string;
 }
 
 export const users = pgTable(

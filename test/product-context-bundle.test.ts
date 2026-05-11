@@ -20,7 +20,7 @@ describe("hasNonEmptyContext", () => {
   it("returns true when structured has any non-empty field", () => {
     expect(hasNonEmptyContext(null, { icp: "Startups" })).toBe(true);
     expect(hasNonEmptyContext(null, { stage: "Seed" })).toBe(true);
-    expect(hasNonEmptyContext(null, { featuresShipped: ["Dashboard"] })).toBe(true);
+    expect(hasNonEmptyContext(null, { primaryMetrics: ["Retention"] })).toBe(true);
   });
 
   it("returns false when all structured fields are empty strings", () => {
@@ -28,9 +28,8 @@ describe("hasNonEmptyContext", () => {
       hasNonEmptyContext(null, {
         icp: "",
         stage: "",
-        primaryMetric: "",
-        featuresShipped: [],
-        roadmapTop: [""],
+        primaryMetrics: [],
+        customMetric: "",
       }),
     ).toBe(false);
   });
@@ -55,22 +54,22 @@ describe("assembleContextBundle", () => {
     const result = assembleContextBundle("Our tool helps PMs", {
       icp: "Startup companies",
       stage: "Seed",
-      primaryMetric: "Retention",
-      featuresShipped: ["Dashboard", "Reports"],
-      roadmapTop: ["Mobile app"],
+      primaryMetrics: ["Retention", "Revenue"],
+      customMetric: "Weekly active teams",
     });
     expect(result.block).toContain("<brief>");
     expect(result.block).toContain("<icp>");
     expect(result.block).toContain("<stage>");
-    expect(result.block).toContain("<primary_metric>");
-    expect(result.block).toContain("<features_shipped>");
-    expect(result.block).toContain("<roadmap>");
+    expect(result.block).toContain("<primary_metrics>");
+    expect(result.block).toContain("<custom_metric>");
+    expect(result.block).not.toContain("<features_shipped>");
+    expect(result.block).not.toContain("<roadmap>");
     expect(result.truncated).toBe(false);
   });
 
-  it("escapes CDATA in structured fields", () => {
+  it("escapes CDATA in custom metric", () => {
     const result = assembleContextBundle(null, {
-      featuresShipped: ["Feature ]]> injection"],
+      customMetric: "Metric ]]> injection",
     });
     expect(result.block).toContain("]]]]><![CDATA[>");
     expect(result.truncated).toBe(false);
@@ -90,24 +89,12 @@ describe("assembleContextBundle", () => {
     expect(new TextEncoder().encode(content).length).toBeLessThanOrEqual(8_192);
   });
 
-  it("limits features_shipped to 5 items", () => {
+  it("renders multiple primary metrics as items", () => {
     const result = assembleContextBundle(null, {
-      featuresShipped: ["A", "B", "C", "D", "E", "F", "G"],
+      primaryMetrics: ["Retention", "Revenue", "NPS"],
     });
     const items = result.block.match(/<item>/g);
-    expect(items).toHaveLength(5);
-  });
-
-  it("drops roadmap first when over 12KB cap", () => {
-    const longBrief = "B".repeat(6_000);
-    const longRoadmap = Array.from({ length: 5 }, () => "R".repeat(2_000));
-    const result = assembleContextBundle(longBrief, {
-      icp: "Startups",
-      roadmapTop: longRoadmap,
-    });
-    expect(result.block).toContain("<brief>");
-    expect(result.block).toContain("<icp>");
-    expect(result.block).not.toContain("<roadmap>");
+    expect(items).toHaveLength(3);
   });
 });
 

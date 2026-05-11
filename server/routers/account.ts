@@ -105,11 +105,11 @@ export const accountRouter = router({
             stage: z
               .enum(["Pre-seed", "Seed", "Series A", "Series B", "Growth", "Public"])
               .optional(),
-            primaryMetric: z
-              .enum(["Retention", "Revenue", "Activation", "NPS", "Custom"])
+            primaryMetrics: z
+              .array(z.enum(["Retention", "Revenue", "Activation", "NPS", "Custom"]))
+              .max(5)
               .optional(),
-            featuresShipped: z.array(z.string().max(200)).max(5).optional(),
-            roadmapTop: z.array(z.string().max(200)).max(5).optional(),
+            customMetric: z.string().max(120).optional(),
           })
           .optional(),
       }),
