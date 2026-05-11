@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { insightClusters, insightRuns } from "@/db/schema";
 import {
@@ -111,5 +111,28 @@ export const insightsRouter = router({
       .orderBy(desc(insightRuns.startedAt))
       .limit(1);
     return row ?? null;
+  }),
+
+  cancelStuckRun: authedProcedure.mutation(async ({ ctx }) => {
+    const STUCK_THRESHOLD_MINUTES = 5;
+    const result = await ctx.db
+      .update(insightRuns)
+      .set({
+        status: "failed",
+        error: "Cancelled: run was stuck for over 5 minutes",
+        finishedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(insightRuns.accountId, ctx.accountId),
+          inArray(insightRuns.status, ["pending", "running"]),
+          lt(
+            insightRuns.startedAt,
+            sql`NOW() - INTERVAL '${sql.raw(String(STUCK_THRESHOLD_MINUTES))} minutes'`,
+          ),
+        ),
+      )
+      .returning({ id: insightRuns.id });
+    return { cancelled: result.length };
   }),
 });

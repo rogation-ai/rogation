@@ -81,6 +81,23 @@ function InsightsPageInner(): React.JSX.Element {
     },
   );
 
+  const run = trpc.insights.run.useMutation({
+    onSuccess: ({ runId }) => {
+      setActiveRunId(runId);
+      setStuckRun(false);
+    },
+  });
+
+  const cancelStuck = trpc.insights.cancelStuckRun.useMutation({
+    onSuccess: ({ cancelled }) => {
+      if (cancelled > 0) {
+        setStuckRun(false);
+        setActiveRunId(null);
+        void utils.insights.latestRun.invalidate();
+      }
+    },
+  });
+
   // Terminal-status handler: success → invalidate + reselect; failure →
   // just clear activeRunId so the button re-enables + surfaces the
   // server error below.
@@ -99,24 +116,19 @@ function InsightsPageInner(): React.JSX.Element {
     }
   }, [runStatus.data, utils]);
 
-  // Client-side stuck-run cutoff. DB rows are not reaped here — that's
-  // an operational concern for later. This just stops the UI from
-  // polling forever when an event was silently dropped.
+  // Client-side stuck-run cutoff. When a run has been pending/running
+  // for longer than STUCK_TIMEOUT_MS: stop polling, cancel the DB row
+  // server-side (so the dedup check doesn't block the next dispatch),
+  // and re-enable the Generate button.
   useEffect(() => {
     if (!activeRunId || !runStatus.data) return;
     const elapsed = Date.now() - new Date(runStatus.data.startedAt).getTime();
     if (elapsed > STUCK_TIMEOUT_MS && !TERMINAL_STATUSES.has(runStatus.data.status)) {
       setStuckRun(true);
       setActiveRunId(null);
+      cancelStuck.mutate();
     }
-  }, [runStatus.data, activeRunId]);
-
-  const run = trpc.insights.run.useMutation({
-    onSuccess: ({ runId }) => {
-      setActiveRunId(runId);
-      setStuckRun(false);
-    },
-  });
+  }, [runStatus.data, activeRunId, cancelStuck]);
 
   const isRunning = Boolean(activeRunId);
   const runError = run.error?.message ?? (runStatus.data?.status === "failed"
