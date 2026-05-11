@@ -91,12 +91,14 @@ export default function BillingSettingsPage(): React.JSX.Element {
           >
             <span>Monthly LLM budget</span>
             <span
+              className="tabular-nums"
               style={{
                 color: budget.overHardCap
                   ? "var(--color-danger)"
                   : budget.overSoftCap
                     ? "var(--color-warning)"
                     : "var(--color-text-secondary)",
+                fontFamily: "var(--font-mono)",
               }}
             >
               {formatBudget(budget.totalInputTokens, budget.hardCap)}
@@ -142,10 +144,12 @@ function UsageRow({
       <div className="flex items-center justify-between">
         <span>{label}</span>
         <span
+          className="tabular-nums"
           style={{
             color: atCap
               ? "var(--color-danger)"
               : "var(--color-text-secondary)",
+            fontFamily: "var(--font-mono)",
           }}
         >
           {current} / {displayMax}

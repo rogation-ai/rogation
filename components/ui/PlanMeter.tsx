@@ -59,7 +59,10 @@ export function PlanMeter({
       <span style={{ color: "var(--color-text-secondary)" }}>{label}</span>
       <span
         className="font-medium tabular-nums"
-        style={{ color: band.textColor }}
+        style={{
+          color: band.textColor,
+          fontFamily: "var(--font-mono)",
+        }}
       >
         {current}/{max}
       </span>

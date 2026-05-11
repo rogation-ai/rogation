@@ -61,7 +61,10 @@ export function FrequencyBar({
       {label && (
         <span
           className="text-[10px] tabular-nums"
-          style={{ color: "var(--color-text-tertiary)" }}
+          style={{
+            color: "var(--color-text-tertiary)",
+            fontFamily: "var(--font-mono)",
+          }}
         >
           {label}
         </span>

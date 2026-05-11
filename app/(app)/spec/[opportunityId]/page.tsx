@@ -362,10 +362,13 @@ export default function SpecEditorPage({
                 {isStreaming ? "Generating…" : "Regenerate"}
               </button>
               <p
-                className="text-xs"
-                style={{ color: "var(--color-text-tertiary)" }}
+                className="text-xs tabular-nums"
+                style={{
+                  color: "var(--color-text-tertiary)",
+                  fontFamily: "var(--font-mono)",
+                }}
               >
-                Version {spec.version} ·{" "}
+                v{spec.version} ·{" "}
                 {new Date(spec.updatedAt).toLocaleDateString()}
               </p>
             </div>
