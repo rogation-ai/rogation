@@ -2,47 +2,62 @@
 
 /*
   Rogation design tokens — source of truth is DESIGN.md.
-  Light palette by default. Dark palette via .dark class OR prefers-color-scheme.
-  All component colors MUST reference these vars. No hardcoded hex in app code.
+
+  Direction (2026-05-11): Industrial / Light / General Sans. Single
+  sans family for display + UI + body, JetBrains Mono Display for
+  data + IDs + timestamps. Warm red brand-accent on cool neutrals.
+  Paired dark mode via prefers-color-scheme.
+
+  Rules: no hardcoded hex in app code, no shadows on default cards,
+  no purple/violet/indigo, no serif, no Inter/Geist/Space Grotesk as
+  primary. Numerics use mono + tabular-nums.
+
+  Fonts load from Fontshare via <link> in app/layout.tsx.
 */
 
 @theme {
-  --font-display: "Tiempos Headline", "Fraunces", ui-serif, Georgia, serif;
-  --font-sans: "Söhne", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Söhne Mono", "IBM Plex Mono", ui-monospace, monospace;
+  --font-display: "General Sans", ui-sans-serif, sans-serif;
+  --font-sans: "General Sans", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
+  /* Brand — warm red, the only personality color */
   --color-brand-accent: #D04B3F;
   --color-brand-accent-ink: #A03027;
 
-  --color-surface-marketing: #F8F1E6;
+  /* Surface — light default, cool neutrals */
+  --color-surface-marketing: #FAF9F7;
   --color-surface-app: #FFFFFF;
-  --color-surface-raised: #FBFAF7;
-  --color-surface-sunken: #F5F2EC;
-  --color-surface-inverse: #1A1815;
+  --color-surface-raised: #F7F7F8;
+  --color-surface-sunken: #ECECEE;
+  --color-surface-inverse: #0A0A0B;
 
-  --color-text-primary: #1A1815;
-  --color-text-secondary: #5C5651;
-  --color-text-tertiary: #8A847E;
-  --color-text-inverse: #F8F1E6;
+  /* Text */
+  --color-text-primary: #0A0A0B;
+  --color-text-secondary: #6E6E76;
+  --color-text-tertiary: #9C9CA4;
+  --color-text-inverse: #FAFAFA;
 
-  --color-border-subtle: #EAE5DC;
-  --color-border-default: #D9D3C7;
-  --color-border-strong: #1A1815;
+  /* Border — cool grays */
+  --color-border-subtle: #E8E8EB;
+  --color-border-default: #D4D4D9;
+  --color-border-strong: #1A1A1F;
 
+  /* Semantic */
   --color-success: #2F7A4F;
   --color-warning: #B4701E;
   --color-danger: #B93A2E;
   --color-info: #4A6B84;
 
-  --color-severity-low: #8A847E;
+  /* Severity (insight clusters) */
+  --color-severity-low: #9C9CA4;
   --color-severity-medium: #B4701E;
   --color-severity-high: #B93A2E;
   --color-severity-critical: #5C1410;
 
   --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 24px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,27 +65,27 @@
     --color-brand-accent: #E45D50;
     --color-brand-accent-ink: #FF8274;
 
-    --color-surface-marketing: #14120F;
-    --color-surface-app: #0E0D0B;
-    --color-surface-raised: #1E1B17;
-    --color-surface-sunken: #0A0907;
-    --color-surface-inverse: #F8F1E6;
+    --color-surface-marketing: #0B0B0E;
+    --color-surface-app: #0B0B0E;
+    --color-surface-raised: #16161A;
+    --color-surface-sunken: #08080A;
+    --color-surface-inverse: #FAFAFA;
 
-    --color-text-primary: #F1ECE2;
-    --color-text-secondary: #B4ADA2;
-    --color-text-tertiary: #7A746B;
-    --color-text-inverse: #1A1815;
+    --color-text-primary: #FAFAFA;
+    --color-text-secondary: #A8A8B0;
+    --color-text-tertiary: #6A6A72;
+    --color-text-inverse: #0A0A0B;
 
-    --color-border-subtle: #2A2622;
-    --color-border-default: #3A3530;
-    --color-border-strong: #F1ECE2;
+    --color-border-subtle: #1F1F25;
+    --color-border-default: #2A2A31;
+    --color-border-strong: #FAFAFA;
 
     --color-success: #4FA874;
     --color-warning: #D89045;
     --color-danger: #E56758;
-    --color-info: #8FB5CF;
+    --color-info: #7FA0BC;
 
-    --color-severity-low: #7A746B;
+    --color-severity-low: #6A6A72;
     --color-severity-medium: #D89045;
     --color-severity-high: #E56758;
     --color-severity-critical: #FF8274;
@@ -78,7 +93,7 @@
 }
 
 html {
-  background: var(--color-surface-marketing);
+  background: var(--color-surface-app);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   font-feature-settings: "ss01", "cv11";
@@ -87,6 +102,16 @@ html {
 body {
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular numerics for any element using --font-mono. Tables, scores,
+   counts, citation chips, timestamps — they all need columns of digits
+   that line up. */
+.font-mono,
+[style*="font-mono"],
+code, kbd, samp {
+  font-feature-settings: "tnum" 1, "ss01" 1;
 }
 
 /* Respect reduced motion across the board. */
@@ -110,4 +135,16 @@ body {
 }
 .rogation-streaming-cursor {
   animation: rogation-cursor-blink 900ms steps(1, end) infinite;
+}
+
+/* Decision tick — the signature motion. Pulses once when a numeric
+   value changes (score on slider drag, count increment, cluster
+   stale → fresh). Applied via a `data-tick` attribute toggled in JS.
+   Reduced-motion freezes it. */
+@keyframes rogation-decision-tick {
+  0%   { background-color: color-mix(in oklab, var(--color-brand-accent) 16%, transparent); }
+  100% { background-color: transparent; }
+}
+[data-tick="true"] {
+  animation: rogation-decision-tick 100ms ease-out 1;
 }
