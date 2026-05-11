@@ -140,9 +140,10 @@ code, kbd, samp {
 /* Decision tick — the signature motion. Pulses once when a numeric
    value changes (score on slider drag, count increment, cluster
    stale → fresh). Applied via a `data-tick` attribute toggled in JS.
-   Reduced-motion freezes it. */
+   The pulse color is hex with alpha (not color-mix) for the broadest
+   tooling support including Lightning CSS. Reduced-motion freezes it. */
 @keyframes rogation-decision-tick {
-  0%   { background-color: color-mix(in oklab, var(--color-brand-accent) 16%, transparent); }
+  0%   { background-color: rgba(208, 75, 63, 0.16); }
   100% { background-color: transparent; }
 }
 [data-tick="true"] {
