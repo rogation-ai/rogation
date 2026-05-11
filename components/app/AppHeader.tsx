@@ -151,6 +151,10 @@ export function AppHeader(): React.JSX.Element {
               </Link>
             );
           })}
+          <UpgradeButton
+            variant="drawer"
+            onNavigate={() => setDrawerOpen(false)}
+          />
           <div
             className="flex items-center justify-end px-6 py-3"
             style={{ color: "var(--color-text-secondary)" }}
