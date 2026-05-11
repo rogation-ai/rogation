@@ -24,24 +24,24 @@ export default async function Home() {
         <header className="flex items-center justify-between pb-20">
           <Link
             href="/"
-            className="font-semibold tracking-tight"
+            className="inline-flex h-11 items-center font-semibold tracking-tight"
             style={{ color: "var(--color-brand-accent)" }}
           >
             Rogation
           </Link>
           <nav
-            className="flex gap-6 text-sm"
+            className="flex items-center text-sm"
             style={{ color: "var(--color-text-secondary)" }}
           >
             <Link
               href="/pricing"
-              className="transition hover:text-[var(--color-text-primary)]"
+              className="inline-flex h-11 items-center px-3 transition hover:text-[var(--color-text-primary)]"
             >
               Pricing
             </Link>
             <Link
               href="/sign-in"
-              className="transition hover:text-[var(--color-text-primary)]"
+              className="inline-flex h-11 items-center px-3 transition hover:text-[var(--color-text-primary)]"
             >
               Log in
             </Link>
@@ -68,14 +68,14 @@ export default async function Home() {
         <div className="mt-10 flex items-center gap-4">
           <Link
             href="/sign-up"
-            className="inline-flex items-center rounded-md px-5 py-2.5 text-sm font-medium text-white transition hover:brightness-110"
+            className="inline-flex h-11 items-center rounded-md px-5 text-sm font-medium text-white transition hover:brightness-110"
             style={{ background: "var(--color-brand-accent)" }}
           >
             Start free
           </Link>
           <Link
             href="/pricing"
-            className="inline-flex items-center text-sm font-medium underline-offset-4 hover:underline"
+            className="inline-flex h-11 items-center text-sm font-medium underline-offset-4 hover:underline"
             style={{ color: "var(--color-text-primary)" }}
           >
             See pricing →
@@ -157,12 +157,12 @@ function ProductCut(): React.JSX.Element {
           borderColor: "var(--color-border-subtle)",
         }}
       >
-        <span
-          className="text-xs uppercase tracking-wider"
-          style={{ color: "var(--color-text-tertiary)" }}
+        <h2
+          className="text-xs font-medium uppercase tracking-wider"
+          style={{ color: "var(--color-text-secondary)" }}
         >
           Insights · 5 clusters
-        </span>
+        </h2>
         <span
           className="text-xs tabular-nums"
           style={{

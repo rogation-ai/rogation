@@ -26,32 +26,32 @@ export default function PricingPage(): React.JSX.Element {
         <header className="flex items-center justify-between pb-16">
           <Link
             href="/"
-            className="font-semibold tracking-tight"
+            className="inline-flex h-11 items-center font-semibold tracking-tight"
             style={{ color: "var(--color-brand-accent)" }}
           >
             Rogation
           </Link>
           <nav
-            className="flex gap-6 text-sm"
+            className="flex items-center text-sm"
             style={{ color: "var(--color-text-secondary)" }}
           >
             <Link
               href="/pricing"
-              className="transition hover:text-[var(--color-text-primary)]"
+              className="inline-flex h-11 items-center px-3 transition hover:text-[var(--color-text-primary)]"
             >
               Pricing
             </Link>
             {isSignedIn ? (
               <Link
                 href="/app"
-                className="transition hover:text-[var(--color-text-primary)]"
+                className="inline-flex h-11 items-center px-3 transition hover:text-[var(--color-text-primary)]"
               >
                 App
               </Link>
             ) : (
               <Link
                 href="/sign-in"
-                className="transition hover:text-[var(--color-text-primary)]"
+                className="inline-flex h-11 items-center px-3 transition hover:text-[var(--color-text-primary)]"
               >
                 Log in
               </Link>
