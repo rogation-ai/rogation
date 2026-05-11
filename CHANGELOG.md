@@ -4,6 +4,16 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.4.1] - 2026-05-11
+
+Page load performance: instant nav feedback and 44% smaller First Load JS.
+
+### Fixed
+- Sidebar navigation no longer freezes on the previous page during route transitions. A shared `loading.tsx` skeleton renders the instant a link is clicked, so the active-nav indicator, top-bar title, and content area all update immediately instead of waiting for RSC + tRPC to resolve.
+- Sentry SDK (~126 KB gzipped) no longer blocks First Contentful Paint on every page including the public landing page. Moved to a deferred dynamic import inside `requestIdleCallback` with a `setTimeout` fallback. Shared First Load JS drops from 185 KB to 103 KB (-44%). Landing page drops from 187 KB to 107 KB.
+
+---
+
 ## [0.10.4.0] - 2026-05-11
 
 UX audit + full design system migration. The app moves from the editorial-serif system (Tiempos + cream + warm-black) to Industrial / Light / General Sans. Paid users can now self-serve their subscription from inside the app.
