@@ -437,9 +437,14 @@ export default function AppHome(): React.JSX.Element {
           className="text-xs"
           style={{ color: "var(--color-text-tertiary)" }}
         >
-          {count} / {me.data.usage.evidence.max === "unlimited"
-            ? "∞"
-            : me.data.usage.evidence.max}{" "}
+          <span
+            className="tabular-nums"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            {count} / {me.data.usage.evidence.max === "unlimited"
+              ? "∞"
+              : me.data.usage.evidence.max}
+          </span>{" "}
           evidence added on the{" "}
           <span style={{ color: "var(--color-text-secondary)" }}>
             {me.data.account.plan}

@@ -243,7 +243,7 @@ type Usage = {
 const RESOURCE_LABELS: Record<keyof Usage, string> = {
   evidence: "Evidence",
   insights: "Insights",
-  opportunities: "Opps",
+  opportunities: "Opportunities",
   specs: "Specs",
   integrations: "Integrations",
 };
