@@ -57,6 +57,29 @@ export interface ApplyResult {
   clustersCreated: number;
   /** Unique cluster ids touched by any action in the plan. */
   touchedClusterIds: Set<string>;
+  /**
+   * Cluster ids that were freshly inserted by this apply (NEW + the
+   * non-first children of every SPLIT). Used by the consolidation
+   * pass to identify candidates for the post-apply micro-cluster
+   * sweep — we only fold clusters this run created, never ones the
+   * user has been looking at across previous runs.
+   */
+  createdClusterIds: Set<string>;
+}
+
+export interface ApplyOpts {
+  /**
+   * Skip the markDownstreamStale fan-out at the end of apply. Used
+   * by the consolidation pass (lib/evidence/clustering/consolidation.ts),
+   * which folds system-spawned micro-clusters into their nearest
+   * neighbour right after the main re-cluster commits. The main pass
+   * already fired downstream-stale signals for any MERGE/SPLIT/
+   * tombstone it produced; re-firing on the consolidation MERGEs
+   * would re-stale opportunities that the same run just touched —
+   * training PMs to ignore the banner. Default false; only the
+   * consolidation caller flips it.
+   */
+  skipDownstreamStale?: boolean;
 }
 
 export async function applyClusterActions(
@@ -65,8 +88,10 @@ export async function applyClusterActions(
   accountId: string,
   promptHash: string,
   contextUsed?: boolean,
+  opts: ApplyOpts = {},
 ): Promise<ApplyResult> {
   const touched = new Set<string>();
+  const created = new Set<string>();
   // Subset of `touched` that should fan out staleness to downstream
   // opportunities + specs. Per design (D1 in plan-eng-review):
   //   MERGE winners + losers, SPLIT origins + children, tombstones → stale
@@ -266,6 +291,7 @@ export async function applyClusterActions(
       }
       touched.add(inserted.id);
       staleSourceClusterIds.add(inserted.id);
+      created.add(inserted.id);
       clustersCreated += 1;
       if (child.evidenceIds.length > 0) {
         await insertEdges(
@@ -300,6 +326,7 @@ export async function applyClusterActions(
       );
     }
     touched.add(inserted.id);
+    created.add(inserted.id);
     clustersCreated += 1;
     if (newCluster.evidenceIds.length > 0) {
       await insertEdges(
@@ -334,12 +361,16 @@ export async function applyClusterActions(
   // 7. Fan staleness out to downstream artifacts. Opportunities linked
   //    to MERGE/SPLIT/tombstone clusters get stale=true; specs of
   //    those opportunities get stale=true. Cleared by regen
-  //    (runFullOpportunities / generateSpec).
-  await markDownstreamStale(tx, accountId, staleSourceClusterIds);
+  //    (runFullOpportunities / generateSpec). Consolidation passes
+  //    skip this — see ApplyOpts.skipDownstreamStale.
+  if (!opts.skipDownstreamStale) {
+    await markDownstreamStale(tx, accountId, staleSourceClusterIds);
+  }
 
   return {
     clustersCreated,
     touchedClusterIds: touched,
+    createdClusterIds: created,
   };
 }
 

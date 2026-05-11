@@ -1,6 +1,8 @@
 import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import * as Sentry from "@sentry/nextjs";
 import {
   evidence,
+  evidenceEmbeddings,
   evidenceToCluster,
   insightClusters,
 } from "@/db/schema";
@@ -10,7 +12,11 @@ import {
   type SynthesisOutput,
 } from "@/lib/llm/prompts/synthesis-cluster";
 import type { Tx } from "@/db/scoped";
-import { assertLabelsResolve } from "@/lib/evidence/clustering/validators";
+import {
+  assertLabelsResolve,
+  dedupeAssignmentsAcrossActions,
+} from "@/lib/evidence/clustering/validators";
+import { farthestFirstIndices } from "@/lib/evidence/clustering/knn";
 import type { ClusterPlan } from "@/lib/evidence/clustering/actions";
 
 /*
@@ -53,28 +59,68 @@ export async function runFullClustering(
   opts: CompleteOpts = {},
   productContext?: string,
 ): Promise<SynthesisResult> {
+  // Load every evidence row + its embedding. We need embeddings any
+  // time the corpus is larger than the per-run cap so we can pick a
+  // representative sample via farthest-first traversal (diversity
+  // sampling) instead of the 50 newest, which would skew toward
+  // whatever the PM uploaded last and miss the shape of the corpus.
   const rows = await ctx.db
     .select({
       id: evidence.id,
       content: evidence.content,
+      embedding: evidenceEmbeddings.embedding,
     })
     .from(evidence)
+    .leftJoin(
+      evidenceEmbeddings,
+      eq(evidenceEmbeddings.evidenceId, evidence.id),
+    )
     .where(eq(evidence.accountId, ctx.accountId))
-    .orderBy(desc(evidence.createdAt))
-    .limit(MAX_EVIDENCE_PER_RUN + 1);
+    .orderBy(desc(evidence.createdAt));
 
   if (rows.length === 0) {
     throw new Error("No evidence to cluster — upload at least 1 piece first");
   }
 
-  if (rows.length > MAX_EVIDENCE_PER_RUN) {
-    throw new Error(
-      `Full re-cluster is capped at ${MAX_EVIDENCE_PER_RUN} evidence rows; ` +
-        `incremental clustering ships in a follow-up commit.`,
+  // Pick the input set the LLM will see.
+  // - Corpus fits in budget: take everything in recency order.
+  // - Corpus is over budget AND every row has an embedding: FFT a
+  //   diverse 50 across the whole corpus, then re-attach the rest
+  //   via incremental on subsequent runs.
+  // - Over budget but missing embeddings: degrade to the 50 newest
+  //   (same behaviour as before) and log so we can chase the gap.
+  let selectedRows: Array<{ id: string; content: string }>;
+  if (rows.length <= MAX_EVIDENCE_PER_RUN) {
+    selectedRows = rows.map((r) => ({ id: r.id, content: r.content }));
+  } else {
+    const allEmbedded = rows.every(
+      (r): r is typeof r & { embedding: number[] } =>
+        Array.isArray(r.embedding) && r.embedding.length > 0,
     );
+    if (allEmbedded) {
+      const pickedIndices = farthestFirstIndices(
+        rows as Array<{ id: string; content: string; embedding: number[] }>,
+        MAX_EVIDENCE_PER_RUN,
+      );
+      selectedRows = pickedIndices.map((i) => ({
+        id: rows[i]!.id,
+        content: rows[i]!.content,
+      }));
+    } else {
+      Sentry.captureMessage("clustering_full_missing_embeddings", {
+        level: "warning",
+        extra: {
+          total: rows.length,
+          missing: rows.filter((r) => !Array.isArray(r.embedding)).length,
+        },
+      });
+      selectedRows = rows
+        .slice(0, MAX_EVIDENCE_PER_RUN)
+        .map((r) => ({ id: r.id, content: r.content }));
+    }
   }
 
-  const labeled = rows.map((r, i) => ({
+  const labeled = selectedRows.map((r, i) => ({
     label: `E${i + 1}`,
     content: r.content,
     id: r.id,
@@ -122,14 +168,30 @@ function buildFullPlan(
   output: SynthesisOutput,
   labelToId: Map<string, string>,
 ): ClusterPlan {
+  // Dedupe across clusters: if the LLM emitted the same evidence
+  // label in two clusters, keep the first occurrence. Mirrors the
+  // incremental path's behaviour so the eval signal is parallel.
+  // Without this the second insert silently no-ops via
+  // onConflictDoNothing on the evidence_to_cluster PK; logging gives
+  // us visibility into how often the LLM violates "exactly one
+  // cluster per label."
+  const labelLists = output.clusters.map((c) => [...c.evidenceLabels]);
+  const dropped = dedupeAssignmentsAcrossActions(labelLists);
+  if (dropped.length > 0) {
+    Sentry.captureMessage("clustering_duplicate_label", {
+      level: "warning",
+      extra: { droppedLabels: dropped, path: "full" },
+    });
+  }
+
   // Every LLM-produced cluster is a NEW in the plan. The orchestrator
   // is responsible for wiping prior rows (design §5 — cold start
   // doesn't tombstone; it starts over).
-  const newClusters = output.clusters.map((c) => ({
+  const newClusters = output.clusters.map((c, i) => ({
     title: c.title,
     description: c.description,
     severity: c.severity,
-    evidenceIds: c.evidenceLabels
+    evidenceIds: labelLists[i]!
       .map((label) => labelToId.get(label))
       .filter((id): id is string => id !== undefined),
   }));

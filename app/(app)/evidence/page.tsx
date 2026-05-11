@@ -17,9 +17,9 @@ import { truncate, formatDate } from "./format";
 
   Cascade behaviour: deleting an evidence row deletes every
   evidence_to_cluster + evidence_to_opportunity edge via FK ON DELETE
-  CASCADE. The cluster row itself stays; it'll look thinner on the
-  next insights.run. PMs are shown the consequence before they
-  confirm so nothing silently weakens an insight.
+  CASCADE. The server then recomputes the affected clusters' frequency
+  on the spot (server/routers/evidence.ts), so cluster cards reflect
+  the new shape as soon as we invalidate the insights query cache.
 */
 
 const PREVIEW_CHARS = 240;
@@ -35,10 +35,10 @@ export default function EvidenceLibraryPage(): React.JSX.Element {
       utils.evidence.list.invalidate();
       utils.evidence.count.invalidate();
       utils.account.me.invalidate();
-      toast.success("Evidence deleted", {
-        description:
-          "Clusters citing this row will look thinner after the next refresh.",
-      });
+      utils.insights.list.invalidate();
+      utils.insights.detail.invalidate();
+      utils.insights.byIds.invalidate();
+      toast.success("Evidence deleted");
     },
     onError: (err) => {
       // Was an alert(); those block the thread and look sloppy.
@@ -145,7 +145,7 @@ export default function EvidenceLibraryPage(): React.JSX.Element {
                     // citation count from the server.
                     if (
                       !confirm(
-                        "Delete this evidence?\n\nAny clusters citing this quote will look thinner after the next Refresh clusters.",
+                        "Delete this evidence?\n\nClusters citing this quote will lose it and may disappear if it's the only supporting piece.",
                       )
                     ) {
                       return;

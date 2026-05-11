@@ -8,6 +8,7 @@ import {
 } from "@/lib/evidence/synthesis";
 import { runIncrementalClustering } from "./incremental";
 import { applyClusterActions } from "./apply";
+import { runConsolidationPass } from "./consolidation";
 import type { InsightRunMode } from "@/db/schema";
 import { loadProductContext } from "@/lib/evidence/load-product-context";
 
@@ -105,57 +106,118 @@ export async function runClustering(
 
   const existingClusters = Number(clusterCountRow?.n ?? 0);
 
-  // Zero live clusters → cold-start is the only correct path; there's
-  // no prior shape to incrementalize from. If the corpus is over the
-  // full-cluster cap, runFullClustering throws a clear "capped at N"
-  // error the worker surfaces as a failed run — strictly better than
-  // routing to incremental and dying on "no live clusters".
+  // Cold start: zero live clusters → run the full path once to seed,
+  // then fall through to the incremental loop below to pick up any
+  // evidence left over after the full path's diversity sample. The
+  // full path caps at MAX_EVIDENCE_PER_RUN (50); with a 200-row
+  // corpus, 150 rows are still unattached after the seed call, and
+  // the incremental chunk loop handles them under the same advisory
+  // lock + tx.
+  let mode: InsightRunMode = "incremental";
+  let totalClustersCreated = 0;
+  let totalEvidenceUsed = 0;
+  let lastPromptHash = "";
+  // Track every cluster id created during this runClustering call so
+  // the consolidation pass at the end can pick from them. Includes
+  // NEW clusters and non-first SPLIT children from every apply.
+  const createdThisRun = new Set<string>();
+
   if (existingClusters === 0) {
-    // Cold start. Wipe any tombstoned remnants (shouldn't exist but
-    // belt-and-suspenders) + run full clustering + apply.
+    mode = "full";
     await deleteAllClustersForAccount(ctx.db, ctx.accountId);
     const { plan, evidenceUsed, promptHash } = await runFullClustering(
       { db: ctx.db, accountId: ctx.accountId },
       mergedOpts,
       productContextBlock,
     );
-    const { clustersCreated } = await applyClusterActions(
+    const { clustersCreated, createdClusterIds } = await applyClusterActions(
       ctx.db,
       plan,
       ctx.accountId,
       promptHash,
       contextUsed,
     );
-    return {
-      mode: "full",
-      clustersCreated,
-      evidenceUsed,
-      promptHash,
-      contextUsed,
-    };
+    totalClustersCreated += clustersCreated;
+    totalEvidenceUsed += evidenceUsed;
+    lastPromptHash = promptHash;
+    for (const id of createdClusterIds) createdThisRun.add(id);
   }
 
-  const {
-    plan,
-    evidenceUsed,
-    promptHash,
-  } = await runIncrementalClustering(
-    { db: ctx.db, accountId: ctx.accountId },
-    mergedOpts,
-    productContextBlock,
-  );
-  const { clustersCreated } = await applyClusterActions(
-    ctx.db,
-    plan,
-    ctx.accountId,
-    promptHash,
-    contextUsed,
-  );
+  // Incremental loop. Runs:
+  //   - after a cold-start full pass to mop up any leftovers
+  //   - as the only path when existingClusters > 0
+  //
+  // Chunks of MAX_CANDIDATES_PER_RUN (50) per LLM call. A PM pasting
+  // 200 new transcripts shouldn't see a "too much at once" throw —
+  // the orchestrator quietly chunks until either nothing is left or
+  // the safety cap (MAX_INCREMENTAL_CHUNKS = 5) kicks in. Above that
+  // something is unusual (bulk import? broken dedupe?) and a partial
+  // pass beats blowing the LLM budget. Leftovers stay unattached and
+  // pick up on the next run.
+  for (let chunk = 0; chunk < MAX_INCREMENTAL_CHUNKS; chunk += 1) {
+    let chunkResult: Awaited<ReturnType<typeof runIncrementalClustering>>;
+    try {
+      chunkResult = await runIncrementalClustering(
+        { db: ctx.db, accountId: ctx.accountId },
+        mergedOpts,
+        productContextBlock,
+      );
+    } catch (err) {
+      // The only expected throw at this point is "no live clusters"
+      // — happens iff the cold-start full call above produced zero
+      // clusters from zero evidence. In that case there's nothing
+      // for incremental to do anyway. Re-throw anything else.
+      if (
+        err instanceof Error &&
+        err.message.includes("no live clusters")
+      ) {
+        break;
+      }
+      throw err;
+    }
+    const { plan, evidenceUsed, promptHash, candidatesRemaining } =
+      chunkResult;
+    lastPromptHash = promptHash;
+    const { clustersCreated, createdClusterIds } = await applyClusterActions(
+      ctx.db,
+      plan,
+      ctx.accountId,
+      promptHash,
+      contextUsed,
+    );
+    totalClustersCreated += clustersCreated;
+    totalEvidenceUsed += evidenceUsed;
+    for (const id of createdClusterIds) createdThisRun.add(id);
+    // Stop early when the chunk was a no-op (zero candidates) or
+    // when nothing remains. evidenceUsed===0 protects against an
+    // infinite loop if a chunk somehow processes no candidates while
+    // candidatesRemaining stays positive — shouldn't happen, but
+    // belt-and-suspenders for a loop under a long-held advisory lock.
+    if (evidenceUsed === 0 || candidatesRemaining === 0) break;
+  }
+
+  // Consolidation pass: fold any micro-clusters (frequency < MIN)
+  // created during this run into their nearest non-created sibling
+  // if the centroid sim is high enough. Runs at most once per
+  // runClustering call. Skips downstream-stale fan-out because we
+  // already fired it for any real MERGE/SPLIT/tombstone above and
+  // re-firing on the consolidation MERGEs would train PMs to ignore
+  // the banner.
+  if (createdThisRun.size > 0 && lastPromptHash) {
+    await runConsolidationPass(
+      { db: ctx.db, accountId: ctx.accountId },
+      createdThisRun,
+      lastPromptHash,
+    );
+  }
+
   return {
-    mode: "incremental",
-    clustersCreated,
-    evidenceUsed,
-    promptHash,
+    mode,
+    clustersCreated: totalClustersCreated,
+    evidenceUsed: totalEvidenceUsed,
+    promptHash: lastPromptHash,
     contextUsed,
   };
 }
+
+const MAX_INCREMENTAL_CHUNKS = 5;

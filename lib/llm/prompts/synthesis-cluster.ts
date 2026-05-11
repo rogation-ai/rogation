@@ -76,6 +76,15 @@ Output a single JSON object of the exact shape:
 Rules:
 - Every evidence label MUST appear in exactly one cluster.
 - Produce 3-8 clusters depending on coherence. Fewer is usually better.
+- Strongly prefer fewer, bigger clusters over many small ones.
+  When two themes are close, merge them under a broader heading
+  rather than emitting two narrow clusters that overlap.
+- Avoid singleton clusters. Each cluster should have at least 2
+  supporting evidence pieces. If only one piece of evidence fits a
+  theme, fold it into the nearest broader cluster instead of
+  spawning a singleton. The only exception is when the corpus is
+  too small (fewer than 4 total evidence pieces) — then singletons
+  are unavoidable.
 - severity reflects business impact (critical = "customers leave",
   low = "minor friction").
 - Each cluster must have at least 1 evidence label.
