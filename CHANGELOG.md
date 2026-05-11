@@ -4,6 +4,25 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.3.0] - 2026-05-11
+
+Product context as first-class LLM input. PMs paste a product brief and fill structured fields (ICP, stage, metric, features, roadmap) on a new /settings/context page. All five prompts consume the context when a per-account feature flag is enabled. Eval rotation compares context-on vs context-off via FeedbackThumbs.
+
+### Added
+- `/settings/context` page with split-view layout (form + live preview)
+- Shared settings layout with left-nav (Product context, Integrations)
+- Product brief, structured fields, feature flag, and rotation flag on account table
+- `context_used` tracking on insight_cluster, opportunity, spec, and entity_feedback
+- Two-block system message pattern preserving prompt_hash stability
+- Multi-boundary cache markers in `buildUserContent()`
+- Context bundle assembler with 12KB cap and per-field CDATA escaping
+- `aggregateByPrompt()` grouping by `context_used` for eval dashboards
+- 27 new tests (hash stability, rotation, bundle assembly, CDATA injection)
+
+### Changed
+- `Prompt.build()` return type widened to `number | number[]` for multi-boundary support
+- `completeStream()` now respects `contextSystemInstruction`
+
 ## [0.10.2.1] - 2026-04-28
 
 Stale opportunities disappear from /build when their evidence is gone.
