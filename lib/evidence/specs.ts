@@ -9,6 +9,7 @@ import {
   specs,
 } from "@/db/schema";
 import { complete, completeStream, type CompleteOpts } from "@/lib/llm/router";
+import { loadProductContext } from "@/lib/evidence/load-product-context";
 import { specGenerate } from "@/lib/llm/prompts/spec-generate";
 import { specRefine } from "@/lib/llm/prompts/spec-refine";
 import { gradeSpec, type ReadinessChecklist } from "@/lib/spec/readiness";
@@ -115,6 +116,15 @@ export async function generateSpec(
 
   const realClusterIds = new Set(clusterRows.map((c) => c.id));
 
+  const runId = crypto.randomUUID();
+  const { contextUsed, promptOpts, productContextBlock } = await loadProductContext(
+    ctx.db,
+    ctx.accountId,
+    runId,
+    "spec",
+    opts,
+  );
+
   const { output } = await complete(
     specGenerate,
     {
@@ -134,8 +144,9 @@ export async function generateSpec(
         frequency: c.frequency,
         quotes: quotes.get(c.id) ?? [],
       })),
+      productContext: productContextBlock,
     },
-    { cache: true, ...opts },
+    { cache: true, ...opts, ...promptOpts },
   );
 
   // Every citation must point at a cluster we actually sent. This is
@@ -174,6 +185,7 @@ export async function generateSpec(
       // Fresh version starts non-stale even if a prior version was
       // staled by upstream cluster reshape.
       stale: false,
+      contextUsed: contextUsed ?? null,
       promptHash: specGenerate.hash,
     })
     .returning({ id: specs.id });
@@ -275,6 +287,10 @@ export async function* generateSpecStream(
   const quotes = await sampleQuotes(ctx, clusterIds, QUOTES_PER_CLUSTER);
   const realClusterIds = new Set(clusterRows.map((c) => c.id));
 
+  const streamRunId = crypto.randomUUID();
+  const { contextUsed: streamContextUsed, promptOpts: streamPromptOpts, productContextBlock: streamCtxBlock } =
+    await loadProductContext(ctx.db, ctx.accountId, streamRunId, "spec", opts);
+
   const stream = completeStream(
     specGenerate,
     {
@@ -294,8 +310,9 @@ export async function* generateSpecStream(
         frequency: c.frequency,
         quotes: quotes.get(c.id) ?? [],
       })),
+      productContext: streamCtxBlock,
     },
-    { cache: true, ...opts },
+    { cache: true, ...opts, ...streamPromptOpts },
   );
 
   let finalOutput: Awaited<ReturnType<typeof specGenerate.parse>> | null = null;
@@ -340,9 +357,8 @@ export async function* generateSpecStream(
       contentMd: markdown,
       readinessGrade: grade,
       readinessChecklist: checklist,
-      // Streaming generate clears stale on the new version, same as
-      // the blocking generateSpec path.
       stale: false,
+      contextUsed: streamContextUsed ?? null,
       promptHash: specGenerate.hash,
     })
     .returning({ id: specs.id });
@@ -414,14 +430,19 @@ export async function* refineSpecStream(
     .orderBy(asc(specRefinements.createdAt))
     .limit(MAX_REFINE_HISTORY);
 
+  const refineRunId = crypto.randomUUID();
+  const { contextUsed: refineContextUsed, promptOpts: refinePromptOpts, productContextBlock: refineCtxBlock } =
+    await loadProductContext(ctx.db, ctx.accountId, refineRunId, "spec", opts);
+
   const stream = completeStream(
     specRefine,
     {
       currentSpec: latest.ir,
       history: historyRows,
       userMessage,
+      productContext: refineCtxBlock,
     },
-    { cache: true, ...opts },
+    { cache: true, ...opts, ...refinePromptOpts },
   );
 
   let finalOutput: Awaited<ReturnType<typeof specRefine.parse>> | null = null;
@@ -458,9 +479,8 @@ export async function* refineSpecStream(
       contentMd: markdown,
       readinessGrade: grade,
       readinessChecklist: checklist,
-      // Refine creates a new version row; stale resets even if the
-      // prior version was staled by upstream cluster reshape.
       stale: false,
+      contextUsed: refineContextUsed ?? null,
       promptHash: specRefine.hash,
     })
     .returning({ id: specs.id });

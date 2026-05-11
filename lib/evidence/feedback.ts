@@ -58,15 +58,13 @@ export async function voteOnEntity(
   ctx: FeedbackCtx,
   input: VoteInput,
 ): Promise<VoteResult> {
-  const promptHash = await lookupPromptHash(
+  const meta = await lookupEntityMeta(
     ctx,
     input.entityType,
     input.entityId,
   );
 
-  if (promptHash === null) {
-    // Entity doesn't exist (or cross-account, RLS hid it) — treat
-    // as not-found rather than inserting a dangling feedback row.
+  if (!meta || meta.promptHash === null) {
     throw new Error("Target entity not found");
   }
 
@@ -79,7 +77,8 @@ export async function voteOnEntity(
       entityId: input.entityId,
       rating: input.rating,
       note: input.note,
-      promptHash,
+      promptHash: meta.promptHash,
+      contextUsed: meta.contextUsed,
     })
     .onConflictDoUpdate({
       target: [
@@ -88,19 +87,14 @@ export async function voteOnEntity(
         entityFeedback.entityType,
         entityFeedback.entityId,
       ],
-      // The unique index is PARTIAL (WHERE user_id IS NOT NULL) so
-      // Postgres requires the same predicate on the ON CONFLICT
-      // target, otherwise "there is no unique or exclusion
-      // constraint matching the ON CONFLICT specification."
-      // Found by /qa on 2026-04-18.
+      // Partial unique index (WHERE user_id IS NOT NULL) requires
+      // matching predicate on ON CONFLICT target.
       targetWhere: isNotNull(entityFeedback.userId),
       set: {
         rating: input.rating,
         note: input.note,
-        // Refresh prompt_hash on revote so the eval window reflects
-        // the most recent generation, not a stale one from before a
-        // regenerate + re-vote.
-        promptHash,
+        promptHash: meta.promptHash,
+        contextUsed: meta.contextUsed,
         createdAt: sql`now()`,
       },
     })
@@ -177,22 +171,24 @@ export async function myVotes(
 
 export interface AggregateRow {
   promptHash: string;
+  contextUsed: boolean | null;
   ups: number;
   downs: number;
   total: number;
 }
 
-/**
- * Per-prompt-hash aggregate. For eval dashboards + "which prompt
- * regressed" alerting. Account-scoped so each tenant's signal is
- * independent.
- */
 export async function aggregateByPrompt(
   ctx: FeedbackCtx,
+  opts?: { groupByContext?: boolean },
 ): Promise<AggregateRow[]> {
+  const groupByContext = opts?.groupByContext ?? false;
+
   const rows = await ctx.db
     .select({
       promptHash: entityFeedback.promptHash,
+      contextUsed: groupByContext
+        ? entityFeedback.contextUsed
+        : sql<boolean | null>`null`,
       ups: sql<number>`count(*) filter (where ${entityFeedback.rating} = 'up')::int`,
       downs: sql<number>`count(*) filter (where ${entityFeedback.rating} = 'down')::int`,
       total: sql<number>`count(*)::int`,
@@ -204,11 +200,15 @@ export async function aggregateByPrompt(
         sql`${entityFeedback.promptHash} is not null`,
       ),
     )
-    .groupBy(entityFeedback.promptHash)
+    .groupBy(
+      entityFeedback.promptHash,
+      ...(groupByContext ? [entityFeedback.contextUsed] : []),
+    )
     .orderBy(desc(sql`count(*)`));
 
   return rows.map((r) => ({
     promptHash: r.promptHash ?? "",
+    contextUsed: r.contextUsed ?? null,
     ups: r.ups,
     downs: r.downs,
     total: r.total,
@@ -217,38 +217,40 @@ export async function aggregateByPrompt(
 
 /* --------------------------- internal helpers --------------------------- */
 
-async function lookupPromptHash(
+interface EntityLookup {
+  promptHash: string | null;
+  contextUsed: boolean | null;
+}
+
+async function lookupEntityMeta(
   ctx: FeedbackCtx,
   entityType: FeedbackEntityType,
   entityId: string,
-): Promise<string | null> {
-  // Per-target table lookup. RLS scopes the SELECT to the current
-  // account — cross-account target ids return zero rows, which we
-  // treat as not-found.
+): Promise<EntityLookup | null> {
   switch (entityType) {
     case "insight_cluster": {
       const [row] = await ctx.db
-        .select({ h: insightClusters.promptHash })
+        .select({ h: insightClusters.promptHash, c: insightClusters.contextUsed })
         .from(insightClusters)
         .where(eq(insightClusters.id, entityId))
         .limit(1);
-      return row?.h ?? null;
+      return row ? { promptHash: row.h ?? null, contextUsed: row.c ?? null } : null;
     }
     case "opportunity": {
       const [row] = await ctx.db
-        .select({ h: opportunitiesTbl.promptHash })
+        .select({ h: opportunitiesTbl.promptHash, c: opportunitiesTbl.contextUsed })
         .from(opportunitiesTbl)
         .where(eq(opportunitiesTbl.id, entityId))
         .limit(1);
-      return row?.h ?? null;
+      return row ? { promptHash: row.h ?? null, contextUsed: row.c ?? null } : null;
     }
     case "spec": {
       const [row] = await ctx.db
-        .select({ h: specs.promptHash })
+        .select({ h: specs.promptHash, c: specs.contextUsed })
         .from(specs)
         .where(eq(specs.id, entityId))
         .limit(1);
-      return row?.h ?? null;
+      return row ? { promptHash: row.h ?? null, contextUsed: row.c ?? null } : null;
     }
   }
 }

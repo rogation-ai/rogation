@@ -64,6 +64,7 @@ export async function applyClusterActions(
   plan: ClusterPlan,
   accountId: string,
   promptHash: string,
+  contextUsed?: boolean,
 ): Promise<ApplyResult> {
   const touched = new Set<string>();
   // Subset of `touched` that should fan out staleness to downstream
@@ -104,9 +105,8 @@ export async function applyClusterActions(
           ...(keep.newDescription !== null
             ? { description: keep.newDescription }
             : {}),
-          // prompt_hash updates iff title/desc changed (design §18).
-          // Pure no-op KEEPs preserve the producing hash.
           promptHash,
+          contextUsed: contextUsed ?? null,
           updatedAt: new Date(),
         })
         .where(
@@ -185,6 +185,7 @@ export async function applyClusterActions(
         title: merge.newTitle,
         description: merge.newDescription,
         promptHash,
+        contextUsed: contextUsed ?? null,
         updatedAt: new Date(),
       })
       .where(
@@ -223,6 +224,7 @@ export async function applyClusterActions(
         description: firstChild.description,
         severity: firstChild.severity,
         promptHash,
+        contextUsed: contextUsed ?? null,
         stale: false,
         updatedAt: new Date(),
       })
@@ -253,6 +255,7 @@ export async function applyClusterActions(
           severity: child.severity,
           frequency: child.evidenceIds.length,
           promptHash,
+          contextUsed: contextUsed ?? null,
         })
         .returning({ id: insightClusters.id });
       if (!inserted) {
@@ -287,6 +290,7 @@ export async function applyClusterActions(
         severity: newCluster.severity,
         frequency: newCluster.evidenceIds.length,
         promptHash,
+        contextUsed: contextUsed ?? null,
       })
       .returning({ id: insightClusters.id });
     if (!inserted) {

@@ -136,6 +136,10 @@ export const accounts = pgTable(
     stripeSubscriptionId: text("stripe_subscription_id"),
     subscriptionStatus: subscriptionStatus("subscription_status"),
     trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    productBrief: text("product_brief"),
+    productBriefStructured: jsonb("product_brief_structured").$type<ProductBriefStructured>(),
+    flagProductContextV1: boolean("flag_product_context_v1").notNull().default(false),
+    flagProductContextV1Rotation: text("flag_product_context_v1_rotation").notNull().default("off"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -145,6 +149,13 @@ export const accounts = pgTable(
     uniqueIndex("account_stripe_subscription_idx").on(t.stripeSubscriptionId),
   ],
 );
+
+export interface ProductBriefStructured {
+  icp?: string;
+  stage?: string;
+  primaryMetrics?: string[];
+  customMetric?: string;
+}
 
 export const users = pgTable(
   "user",
@@ -249,6 +260,7 @@ export const insightClusters = pgTable(
     // Never DELETE a merged cluster — opportunity_to_cluster FKs
     // depend on this row staying resolvable.
     tombstonedInto: uuid("tombstoned_into"),
+    contextUsed: boolean("context_used"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -349,6 +361,7 @@ export const opportunities = pgTable(
     // runFullOpportunities() call. Drives the "Re-rank to refresh"
     // banner on /build.
     stale: boolean("stale").notNull().default(false),
+    contextUsed: boolean("context_used"),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -434,6 +447,7 @@ export const specs = pgTable(
     // Drives the page-level "Source clusters changed" banner on
     // /spec/[opportunityId].
     stale: boolean("stale").notNull().default(false),
+    contextUsed: boolean("context_used"),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -542,6 +556,7 @@ export const entityFeedback = pgTable(
     rating: feedbackRating("rating").notNull(),
     note: text("note"),
     promptHash: varchar("prompt_hash", { length: 64 }),
+    contextUsed: boolean("context_used"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -84,11 +84,14 @@ describe("specRefine.build", () => {
       history: [{ role: "user", content: "prior" }],
       userMessage: "NEW",
     });
-    expect(cacheBoundary).toBeLessThan(user.length);
+    const boundaries = cacheBoundary as number[];
+    expect(Array.isArray(boundaries)).toBe(true);
+    const lastBoundary = boundaries[boundaries.length - 1]!;
+    expect(lastBoundary).toBeLessThan(user.length);
     // Everything after the boundary should include the fresh user
     // message; everything before should not.
-    const post = user.slice(cacheBoundary!);
-    const pre = user.slice(0, cacheBoundary!);
+    const post = user.slice(lastBoundary);
+    const pre = user.slice(0, lastBoundary);
     expect(post).toContain("NEW");
     expect(pre).not.toContain("NEW");
   });

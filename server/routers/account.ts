@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
-import { accounts, users } from "@/db/schema";
+import { z } from "zod";
+import { accounts, users, type ProductBriefStructured } from "@/db/schema";
 import {
   PLAN_LIMITS,
   countResource,
@@ -8,6 +9,7 @@ import {
 } from "@/lib/plans";
 import { readBudget } from "@/lib/llm/usage";
 import { authedProcedure, router } from "@/server/trpc";
+import { TRPCError } from "@trpc/server";
 
 /*
   account.me — returns the caller's own account + user row + current
@@ -78,4 +80,68 @@ export const accountRouter = router({
       budget,
     };
   }),
+
+  productContext: authedProcedure.query(async ({ ctx }) => {
+    const [row] = await ctx.db
+      .select({
+        productBrief: accounts.productBrief,
+        productBriefStructured: accounts.productBriefStructured,
+        flagProductContextV1: accounts.flagProductContextV1,
+        flagProductContextV1Rotation: accounts.flagProductContextV1Rotation,
+      })
+      .from(accounts)
+      .where(eq(accounts.id, ctx.accountId))
+      .limit(1);
+    return row ?? null;
+  }),
+
+  updateProductContext: authedProcedure
+    .input(
+      z.object({
+        productBrief: z.string().max(8192).optional(),
+        productBriefStructured: z
+          .object({
+            icp: z.string().max(120).optional(),
+            stage: z
+              .enum(["Pre-seed", "Seed", "Series A", "Series B", "Growth", "Public"])
+              .optional(),
+            primaryMetrics: z
+              .array(z.enum(["Retention", "Revenue", "Activation", "NPS", "Custom"]))
+              .max(5)
+              .optional(),
+            customMetric: z.string().max(120).optional(),
+          })
+          .optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        input.productBrief !== undefined &&
+        new TextEncoder().encode(input.productBrief).length > 8192
+      ) {
+        throw new TRPCError({
+          code: "PAYLOAD_TOO_LARGE",
+          message: "Product brief exceeds 8KB limit",
+          cause: { type: "payload_too_large" },
+        });
+      }
+
+      const updates: Record<string, unknown> = {};
+      if (input.productBrief !== undefined) {
+        updates.productBrief = input.productBrief || null;
+      }
+      if (input.productBriefStructured !== undefined) {
+        updates.productBriefStructured =
+          (input.productBriefStructured as ProductBriefStructured) ?? null;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await ctx.db
+          .update(accounts)
+          .set(updates)
+          .where(eq(accounts.id, ctx.accountId));
+      }
+
+      return { ok: true };
+    }),
 });

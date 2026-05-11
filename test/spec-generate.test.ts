@@ -130,7 +130,7 @@ describe("specGenerate.build", () => {
         },
       ],
     });
-    expect(cacheBoundary).toBe(user.length);
+    expect(cacheBoundary).toEqual([user.length]);
   });
 });
 

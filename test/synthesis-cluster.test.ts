@@ -56,7 +56,7 @@ describe("synthesisCluster.build", () => {
     const { user, cacheBoundary } = synthesisCluster.build({
       evidence: [{ label: "E1", content: "x" }],
     });
-    expect(cacheBoundary).toBe(user.length);
+    expect(cacheBoundary).toEqual([user.length]);
   });
 });
 
