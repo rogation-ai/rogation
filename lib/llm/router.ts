@@ -90,6 +90,8 @@ export interface CompleteOpts {
   temperature?: number;
   /** AbortSignal for cancellation. */
   signal?: AbortSignal;
+  /** System-level instruction injected as a second system block (not hashed). */
+  contextSystemInstruction?: string;
 }
 
 const DEFAULT_TEMPERATURE: Record<Exclude<LLMTask, "embedding">, number> = {
@@ -119,8 +121,6 @@ export async function complete<Input, Output>(
   const started = Date.now();
   const maxAttempts = opts.maxAttempts ?? 3;
 
-  // System message uses cache_control when cache=true so subsequent
-  // calls re-hit the cached system blob.
   const systemBlocks = opts.cache
     ? [
         {
@@ -128,8 +128,13 @@ export async function complete<Input, Output>(
           text: prompt.system,
           cache_control: { type: "ephemeral" as const },
         },
+        ...(opts.contextSystemInstruction
+          ? [{ type: "text" as const, text: opts.contextSystemInstruction }]
+          : []),
       ]
-    : prompt.system;
+    : opts.contextSystemInstruction
+      ? `${prompt.system}\n\n${opts.contextSystemInstruction}`
+      : prompt.system;
 
   const userContent = buildUserContent(
     built.user,
@@ -260,8 +265,13 @@ export async function* completeStream<Input, Output>(
           text: prompt.system,
           cache_control: { type: "ephemeral" as const },
         },
+        ...(opts.contextSystemInstruction
+          ? [{ type: "text" as const, text: opts.contextSystemInstruction }]
+          : []),
       ]
-    : prompt.system;
+    : opts.contextSystemInstruction
+      ? `${prompt.system}\n\n${opts.contextSystemInstruction}`
+      : prompt.system;
 
   const userContent = buildUserContent(
     built.user,
@@ -383,31 +393,41 @@ type UserTextBlock = {
  */
 export function buildUserContent(
   user: string,
-  cacheBoundary: number | undefined,
+  cacheBoundary: number | number[] | undefined,
   cache: boolean,
 ): string | UserTextBlock[] {
-  if (!cache || typeof cacheBoundary !== "number") return user;
+  if (!cache || cacheBoundary === undefined) return user;
 
-  const boundary = Math.max(0, Math.min(cacheBoundary, user.length));
-  const prefix = user.slice(0, boundary);
-  const tail = user.slice(boundary);
+  const boundaries = Array.isArray(cacheBoundary)
+    ? cacheBoundary.map((b) => Math.max(0, Math.min(b, user.length))).sort((a, b) => a - b)
+    : [Math.max(0, Math.min(cacheBoundary, user.length))];
 
-  if (prefix.length === 0) {
-    // Nothing stable to cache; fall back to the plain-string form.
+  if (boundaries.length === 0 || (boundaries[0] === 0 && boundaries.length === 1)) {
     return user;
   }
 
-  const blocks: UserTextBlock[] = [
-    {
-      type: "text",
-      text: prefix,
-      cache_control: { type: "ephemeral" },
-    },
-  ];
+  const blocks: UserTextBlock[] = [];
+  let cursor = 0;
+
+  for (const boundary of boundaries) {
+    if (boundary <= cursor) continue;
+    const slice = user.slice(cursor, boundary);
+    if (slice.length > 0) {
+      blocks.push({
+        type: "text",
+        text: slice,
+        cache_control: { type: "ephemeral" },
+      });
+    }
+    cursor = boundary;
+  }
+
+  const tail = user.slice(cursor);
   if (tail.length > 0) {
     blocks.push({ type: "text", text: tail });
   }
-  return blocks;
+
+  return blocks.length > 0 ? blocks : user;
 }
 
 /* ----------------------------- retry helpers ------------------------------ */

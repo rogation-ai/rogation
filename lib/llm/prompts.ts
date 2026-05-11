@@ -40,7 +40,7 @@ export interface Prompt<Input, Output> {
    * part of the hash — only the template itself is. Runtime input is
    * traced separately via onTrace().
    */
-  build(input: Input): { user: string; cacheBoundary?: number };
+  build(input: Input): { user: string; cacheBoundary?: number | number[] };
   /**
    * Parse the model's text output into the typed Output. Throws on
    * schema mismatch so the router can catch + retry or fail cleanly.

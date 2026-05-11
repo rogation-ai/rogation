@@ -427,13 +427,15 @@ describe("synthesisIncremental.build", () => {
 
   it("cacheBoundary points at the end of <existing>, before <candidate>", () => {
     const { user, cacheBoundary } = synthesisIncremental.build(baseInput());
-    expect(cacheBoundary).toBeDefined();
-    expect(cacheBoundary).toBeGreaterThan(0);
-    expect(cacheBoundary).toBeLessThan(user.length);
+    const boundaries = cacheBoundary as number[];
+    expect(Array.isArray(boundaries)).toBe(true);
+    const lastBoundary = boundaries[boundaries.length - 1]!;
+    expect(lastBoundary).toBeGreaterThan(0);
+    expect(lastBoundary).toBeLessThan(user.length);
     // The prefix slice must contain </existing> and must NOT contain
     // <candidate> — that's the whole point of the boundary.
-    const prefix = user.slice(0, cacheBoundary);
-    const suffix = user.slice(cacheBoundary!);
+    const prefix = user.slice(0, lastBoundary);
+    const suffix = user.slice(lastBoundary);
     expect(prefix).toContain("</existing>");
     expect(prefix).not.toContain("<candidate>");
     expect(suffix).toContain("<candidate>");
@@ -444,7 +446,7 @@ describe("synthesisIncremental.build", () => {
     const a = synthesisIncremental.build(baseInput());
     const b = synthesisIncremental.build(baseInput());
     expect(a.user).toBe(b.user);
-    expect(a.cacheBoundary).toBe(b.cacheBoundary);
+    expect(a.cacheBoundary).toEqual(b.cacheBoundary);
   });
 
   it("produces output whose candidate content round-trips via CDATA escape", () => {

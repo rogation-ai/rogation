@@ -39,6 +39,8 @@ import {
 export interface SynthesisInput {
   /** Evidence items in the order they'll be labeled E1, E2, ... */
   evidence: Array<{ label: string; content: string }>;
+  /** Assembled product context block from assembleContextBundle(). */
+  productContext?: string;
 }
 
 export interface SynthesisOutput {
@@ -84,6 +86,10 @@ export const synthesisCluster = definePrompt<SynthesisInput, SynthesisOutput>({
   task: "synthesis",
   system: SYSTEM,
   build(input) {
+    const contextBlock = input.productContext
+      ? `${input.productContext}\n\n`
+      : "";
+
     const wrapped = input.evidence
       .map(
         (e) =>
@@ -93,13 +99,14 @@ export const synthesisCluster = definePrompt<SynthesisInput, SynthesisOutput>({
       )
       .join("\n");
 
-    // cacheBoundary at end of evidence block: the static system + the
-    // corpus are cacheable across calls; any trailing question we add
-    // later lands outside the boundary.
     const user =
-      `Cluster the evidence below. Remember: JSON only.\n\n${wrapped}`;
+      `${contextBlock}Cluster the evidence below. Remember: JSON only.\n\n${wrapped}`;
 
-    return { user, cacheBoundary: user.length };
+    const boundaries: number[] = [];
+    if (contextBlock.length > 0) boundaries.push(contextBlock.length);
+    boundaries.push(user.length);
+
+    return { user, cacheBoundary: boundaries };
   },
   parse(raw) {
     const parsed = extractJson(raw);

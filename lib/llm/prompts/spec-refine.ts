@@ -29,6 +29,8 @@ export interface SpecRefineInput {
   history: Array<{ role: "user" | "assistant"; content: string }>;
   /** The user's latest instruction. */
   userMessage: string;
+  /** Assembled product context block from assembleContextBundle(). */
+  productContext?: string;
 }
 
 export interface SpecRefineOutput {
@@ -83,6 +85,10 @@ export const specRefine = definePrompt<SpecRefineInput, SpecRefineOutput>({
   task: "refinement",
   system: SYSTEM,
   build(input) {
+    const contextBlock = input.productContext
+      ? `${input.productContext}\n\n`
+      : "";
+
     const historyXml = input.history
       .map(
         (m) =>
@@ -103,13 +109,17 @@ export const specRefine = definePrompt<SpecRefineInput, SpecRefineOutput>({
 ${historyXml}
 </history>`;
 
-    const user = `Refine the spec per the user's latest instruction. JSON only.
+    const user = `${contextBlock}Refine the spec per the user's latest instruction. JSON only.
 
 ${stablePart}
 
 <userMessage><![CDATA[${input.userMessage}]]></userMessage>`;
 
-    return { user, cacheBoundary: stablePart.length };
+    const boundaries: number[] = [];
+    if (contextBlock.length > 0) boundaries.push(contextBlock.length);
+    boundaries.push(contextBlock.length + stablePart.length);
+
+    return { user, cacheBoundary: boundaries };
   },
   parse(raw) {
     const parsed = extractJson(raw);

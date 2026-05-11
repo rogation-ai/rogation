@@ -57,6 +57,8 @@ export interface SynthesisIncrementalInput {
     /** Optional hint: nearest existing cluster labels from KNN. */
     knnNearest?: string[];
   }>;
+  /** Assembled product context block from assembleContextBundle(). */
+  productContext?: string;
 }
 
 const SYSTEM = `You are a Product-Management synthesis assistant. You
@@ -148,6 +150,10 @@ export const synthesisIncremental = definePrompt<
   task: "synthesis",
   system: SYSTEM,
   build(input) {
+    const contextBlock = input.productContext
+      ? `${input.productContext}\n\n`
+      : "";
+
     const existingXml = input.existing
       .map((c) => {
         const evidenceXml = c.evidence
@@ -197,7 +203,13 @@ ${existingXml}
 ${candidateXml}
 </candidate>`;
 
-    return { user: prefix + suffix, cacheBoundary: prefix.length };
+    const user = contextBlock + prefix + suffix;
+
+    const boundaries: number[] = [];
+    if (contextBlock.length > 0) boundaries.push(contextBlock.length);
+    boundaries.push(contextBlock.length + prefix.length);
+
+    return { user, cacheBoundary: boundaries };
   },
   parse(raw) {
     const parsed = extractJson(raw);

@@ -34,6 +34,7 @@ export interface OpportunityScoreInput {
     frequency: number;
     sampleQuotes?: string[];
   }>;
+  productContext?: string;
 }
 
 export type EffortEstimate = "XS" | "S" | "M" | "L" | "XL";
@@ -136,9 +137,18 @@ export const opportunityScore = definePrompt<
       })
       .join("\n");
 
+    const contextBlock = input.productContext
+      ? `${input.productContext}\n\n`
+      : "";
+
     const user =
-      `Propose opportunities for these clusters. Remember: JSON only.\n\n${wrapped}`;
-    return { user, cacheBoundary: user.length };
+      `${contextBlock}Propose opportunities for these clusters. Remember: JSON only.\n\n${wrapped}`;
+
+    const boundaries: number[] = [];
+    if (contextBlock.length > 0) boundaries.push(contextBlock.length);
+    boundaries.push(user.length);
+
+    return { user, cacheBoundary: boundaries };
   },
   parse(raw) {
     const parsed = extractJson(raw);

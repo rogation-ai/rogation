@@ -40,6 +40,8 @@ export interface SpecGenerateInput {
     frequency: number;
     quotes: string[];
   }>;
+  /** Assembled product context block from assembleContextBundle(). */
+  productContext?: string;
 }
 
 export type SpecGenerateOutput = { spec: SpecIR };
@@ -101,6 +103,10 @@ export const specGenerate = definePrompt<
   task: "generation",
   system: SYSTEM,
   build(input) {
+    const contextBlock = input.productContext
+      ? `${input.productContext}\n\n`
+      : "";
+
     const clustersXml = input.clusters
       .map((c) => {
         const quotes = c.quotes
@@ -127,14 +133,19 @@ ${quotes}
   }" activation="${input.opportunity.impact.activation ?? 0}" />
 </opportunity>`;
 
-    const user = `Generate the spec for this opportunity. JSON only.
+    const user = `${contextBlock}Generate the spec for this opportunity. JSON only.
 
 ${opportunity}
 
 <clusters>
 ${clustersXml}
 </clusters>`;
-    return { user, cacheBoundary: user.length };
+
+    const boundaries: number[] = [];
+    if (contextBlock.length > 0) boundaries.push(contextBlock.length);
+    boundaries.push(user.length);
+
+    return { user, cacheBoundary: boundaries };
   },
   parse(raw) {
     const parsed = extractJson(raw);
