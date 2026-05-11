@@ -52,6 +52,8 @@ All env reads go through `env.ts` (typed via `@t3-oss/env-nextjs` + zod). Never 
 
 `DESIGN.md` is the source of truth for every design decision: typography, color, spacing, radius, motion, component inventory, state matrix, responsive posture (mobile-read / desktop-write), WCAG 2.2 AA baseline. When writing UI, read DESIGN.md first; tokens must come from the CSS variables in `app/globals.css`.
 
+Current direction (set 2026-05-11): Industrial / Utilitarian, light-by-default, single sans family (**General Sans** for display + UI + body, **JetBrains Mono Display** for data/IDs/timestamps). Warm red brand-accent (#D04B3F) used sparingly — active nav + primary CTAs + severity-critical dots only. App shell is a persistent 240px left sidebar + 56px top bar (not top nav). No serif, no purple/violet, no Inter/Geist/Space Grotesk, no shadows on default cards, no chat-bubble UI for AI output (refinement turns render in-document). Approved mockup: `~/.gstack/projects/rogation-ai-rogation/designs/redesign-modern-20260511/variant-C.png`.
+
 ## Auth + API
 
 - Auth: Clerk. `middleware.ts` at repo root runs Clerk on every non-static request. Public routes: `/`, `/pricing`, `/docs/*`, `/s/*` (share links), `/api/webhooks/*`, `/sign-in*`, `/sign-up*`. Everything else requires a session.

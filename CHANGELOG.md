@@ -4,6 +4,41 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.4.0] - 2026-05-11
+
+UX audit + full design system migration. The app moves from the editorial-serif system (Tiempos + cream + warm-black) to Industrial / Light / General Sans. Paid users can now self-serve their subscription from inside the app.
+
+### Added
+- `/settings/billing` page with current plan, per-resource usage bars, monthly LLM budget signal, and the shared tier-compare grid for in-app upgrade/downgrade via Stripe Checkout + Customer Portal
+- Sidebar shell (240px left sidebar + 56px top bar) replaces the marketing-style top nav across all authed pages. Plan meter pinned to sidebar bottom shows the tightest resource with a full-width bar + mono numerals + inline Upgrade link
+- Mobile drawer with all nav items + Billing link, 44px tap targets
+- Product cut on the marketing landing: a stylized Insights preview with severity dots, mono frequency counts, and "updated 12m ago" timestamp
+- Flow line on landing: "01 Paste evidence > 02 Cluster pain > 03 Score opportunities > 04 Stream spec > 05 Push to Linear" with JetBrains Mono numerals
+- `components/billing/PricingTiers.tsx`: shared tier-card grid used by both `/pricing` and `/settings/billing`
+- Decision tick CSS keyframe (`rogation-decision-tick`): 100ms warm-red pulse for numeric value changes
+
+### Changed
+- **Design system direction:** Industrial / Utilitarian, light-by-default. General Sans (Fontshare CDN) replaces Tiempos Headline + Söhne. JetBrains Mono Display replaces Söhne Mono. Warm red brand-accent (#D04B3F) retained as only personality color
+- **Color tokens:** cool neutrals replace warm grays. Surface-app #FFFFFF (was warm white), borders #E8E8EB/#D4D4D9 (was warm #EAE5DC/#D9D3C7). Dark mode becomes true-neutral #0B0B0E (was warm #0E0D0B)
+- **Radius:** md tightens 8px to 6px, lg 12px to 10px
+- Pricing page CTAs render immediately for unauthed visitors (was gated on Clerk `isLoaded` for all visitors, showing "Loading..." for ~2s)
+- Pricing page uses shared `PricingTiers` component
+- Marketing landing + pricing pages use `--color-surface-marketing` for brand continuity
+- All numeric displays (PlanMeter, FrequencyBar, evidence count, spec version, billing usage) use JetBrains Mono with tabular-nums
+- UpgradeButton is plan-aware: red "Upgrade" pill for free users, muted "Billing" text link for paid users. Both route to `/settings/billing`
+
+### Fixed
+- Dead "Product" and "Docs" nav links on homepage (pointed to `#`, /docs returns 404)
+- Inconsistent top-nav between `/` and `/pricing`
+- Inline "Plan cap reached — upgrade to seed the rest." was plain text, now a clickable link to `/settings/billing`
+- `color-mix(in oklab, ...)` inside `@keyframes` broke Lightning CSS silently (CSS bundle 404'd). Replaced with rgba()
+- Product-cut eyebrow "INSIGHTS · 5 CLUSTERS" promoted from `<span>` to `<h2>` and lifted from text-tertiary to text-secondary for contrast
+- All marketing CTAs + nav links meet 44px touch target floor (was 20-40px)
+
+### Removed
+- `components/app/AppHeader.tsx` (replaced by AppSidebar + AppTopBar)
+- `components/app/UpgradeButton.tsx` (functionality absorbed into AppSidebar plan meter + AppTopBar drawer)
+
 ## [0.10.3.1] - 2026-05-11
 
 Re-cluster works again after deleting all evidence and uploading new pieces.

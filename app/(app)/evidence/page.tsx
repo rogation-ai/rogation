@@ -107,7 +107,13 @@ export default function EvidenceLibraryPage(): React.JSX.Element {
                     >
                       {sourceLabel(row.sourceType as SourceType)}
                     </span>
-                    <span style={{ color: "var(--color-text-tertiary)" }}>
+                    <span
+                      className="tabular-nums"
+                      style={{
+                        color: "var(--color-text-tertiary)",
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
                       · {formatDate(row.createdAt)}
                     </span>
                     {row.segment ? (

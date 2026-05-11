@@ -1,15 +1,15 @@
-import { AppHeader } from "@/components/app/AppHeader";
+import { AppSidebar } from "@/components/app/AppSidebar";
+import { AppTopBar } from "@/components/app/AppTopBar";
 
 /*
-  Signed-in app shell. All feature screens (Evidence library, Insights,
-  What to build, Spec editor, Outcomes) live under this layout. Per
-  DESIGN.md responsive posture, write actions happen at desktop only;
-  mobile gets read-only browse.
+  Signed-in app shell. Sidebar (240px, desktop only) + top bar (56px)
+  + canvas. DESIGN.md §5. Mobile collapses the sidebar into a drawer
+  owned by the top bar.
 
-  Header is a client component so it can own the mobile drawer state
-  and the active-nav indicator. This layout stays server-side.
+  Both shell pieces are client components (active-nav, drawer state,
+  trpc.account.me query) — this layout stays a server component and
+  composes them.
 */
-
 export default function AppLayout({
   children,
 }: {
@@ -17,11 +17,16 @@ export default function AppLayout({
 }) {
   return (
     <div
-      className="min-h-dvh"
+      className="flex min-h-dvh"
       style={{ background: "var(--color-surface-app)" }}
     >
-      <AppHeader />
-      <div className="mx-auto max-w-6xl px-6 py-10">{children}</div>
+      <AppSidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <AppTopBar />
+        <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

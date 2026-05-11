@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { NumberedStepper } from "@/components/ui/NumberedStepper";
@@ -405,7 +406,19 @@ export default function AppHome(): React.JSX.Element {
               {seedSample.data.inserted > 0
                 ? `Added ${seedSample.data.inserted}${seedSample.data.deduped > 0 ? ` (${seedSample.data.deduped} already present)` : ""}.`
                 : `${seedSample.data.deduped} samples already present.`}
-              {seedSample.data.capReached && " Plan cap reached — upgrade to seed the rest."}
+              {seedSample.data.capReached && (
+                <>
+                  {" Plan cap reached — "}
+                  <Link
+                    href="/settings/billing"
+                    className="underline underline-offset-2"
+                    style={{ color: "var(--color-brand-accent)" }}
+                  >
+                    upgrade
+                  </Link>
+                  {" to seed the rest."}
+                </>
+              )}
             </span>
           )}
           {seedSample.error && (
@@ -424,9 +437,14 @@ export default function AppHome(): React.JSX.Element {
           className="text-xs"
           style={{ color: "var(--color-text-tertiary)" }}
         >
-          {count} / {me.data.usage.evidence.max === "unlimited"
-            ? "∞"
-            : me.data.usage.evidence.max}{" "}
+          <span
+            className="tabular-nums"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            {count} / {me.data.usage.evidence.max === "unlimited"
+              ? "∞"
+              : me.data.usage.evidence.max}
+          </span>{" "}
           evidence added on the{" "}
           <span style={{ color: "var(--color-text-secondary)" }}>
             {me.data.account.plan}
