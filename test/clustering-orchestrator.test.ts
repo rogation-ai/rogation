@@ -112,8 +112,8 @@ describe.skipIf(!hasTestDb)("runClustering dispatch (DB-backed, mocked LLM)", ()
 
       // Seed 2 orphan clusters (freq=0, centroid=null, not tombstoned) —
       // exactly what evidence.delete leaves behind after recompute.
-      await insertCluster(tx, accountB, "orphan-1");
-      await insertCluster(tx, accountB, "orphan-2");
+      await insertCluster(tx, accountB, "orphan-1", 0);
+      await insertCluster(tx, accountB, "orphan-2", 0);
 
       // Upload 3 fresh evidence pieces (no edges to the orphans).
       await insertEvidenceWithEmbedding(tx, accountB, "n1", vec(1));
@@ -190,7 +190,12 @@ async function seedAccount(handle: TestDbHandle, email: string): Promise<string>
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function insertCluster(tx: any, accountId: string, title: string): Promise<string> {
+async function insertCluster(
+  tx: any,
+  accountId: string,
+  title: string,
+  frequency = 1,
+): Promise<string> {
   const [row] = await tx
     .insert(insightClusters)
     .values({
@@ -198,7 +203,7 @@ async function insertCluster(tx: any, accountId: string, title: string): Promise
       title,
       description: "desc",
       severity: "medium",
-      frequency: 0,
+      frequency,
       promptHash: "testhash",
     })
     .returning({ id: insightClusters.id });

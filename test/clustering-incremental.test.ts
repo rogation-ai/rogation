@@ -298,7 +298,12 @@ async function seedAccount(handle: TestDbHandle, email: string): Promise<string>
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function insertCluster(tx: any, accountId: string, title: string): Promise<string> {
+async function insertCluster(
+  tx: any,
+  accountId: string,
+  title: string,
+  frequency = 1,
+): Promise<string> {
   const [row] = await tx
     .insert(insightClusters)
     .values({
@@ -306,7 +311,7 @@ async function insertCluster(tx: any, accountId: string, title: string): Promise
       title,
       description: `${title} desc`,
       severity: "medium",
-      frequency: 0,
+      frequency,
       promptHash: "testhash",
     })
     .returning({ id: insightClusters.id });
