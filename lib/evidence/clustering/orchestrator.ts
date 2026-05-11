@@ -9,6 +9,7 @@ import {
 import { runIncrementalClustering } from "./incremental";
 import { applyClusterActions } from "./apply";
 import type { InsightRunMode } from "@/db/schema";
+import { loadProductContext } from "@/lib/evidence/load-product-context";
 
 /*
   Re-cluster dispatch (design §7 rule).
@@ -40,22 +41,27 @@ export interface OrchestratorResult {
   clustersCreated: number;
   evidenceUsed: number;
   promptHash: string;
+  contextUsed: boolean;
 }
 
 export async function runClustering(
   ctx: OrchestratorContext,
   opts: CompleteOpts = {},
+  runId?: string,
 ): Promise<OrchestratorResult> {
-  // Serialize per account. Two concurrent re-cluster runs on the same
-  // account would race each other: overlapping reads of existing
-  // clusters, duplicate NEW inserts, tombstone collisions, corrupt
-  // centroids. The Inngest worker enforces concurrency.limit=1 per
-  // accountId, but the sync tRPC path bypasses that — this advisory
-  // lock closes the gap. Transaction-scoped: released on commit or
-  // rollback, no explicit unlock needed.
   await ctx.db.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended('cluster:' || ${ctx.accountId}, 0))`,
   );
+
+  const effectiveRunId = runId ?? crypto.randomUUID();
+  const { contextUsed, promptOpts, productContextBlock } = await loadProductContext(
+    ctx.db,
+    ctx.accountId,
+    effectiveRunId,
+    "clustering",
+    opts,
+  );
+  const mergedOpts = { ...opts, ...promptOpts };
 
   const [clusterCountRow] = await ctx.db
     .select({ n: count() })
@@ -80,41 +86,46 @@ export async function runClustering(
     await deleteAllClustersForAccount(ctx.db, ctx.accountId);
     const { plan, evidenceUsed, promptHash } = await runFullClustering(
       { db: ctx.db, accountId: ctx.accountId },
-      opts,
+      mergedOpts,
+      productContextBlock,
     );
     const { clustersCreated } = await applyClusterActions(
       ctx.db,
       plan,
       ctx.accountId,
       promptHash,
+      contextUsed,
     );
     return {
       mode: "full",
       clustersCreated,
       evidenceUsed,
       promptHash,
+      contextUsed,
     };
   }
 
-  // Incremental path.
   const {
     plan,
     evidenceUsed,
     promptHash,
   } = await runIncrementalClustering(
     { db: ctx.db, accountId: ctx.accountId },
-    opts,
+    mergedOpts,
+    productContextBlock,
   );
   const { clustersCreated } = await applyClusterActions(
     ctx.db,
     plan,
     ctx.accountId,
     promptHash,
+    contextUsed,
   );
   return {
     mode: "incremental",
     clustersCreated,
     evidenceUsed,
     promptHash,
+    contextUsed,
   };
 }

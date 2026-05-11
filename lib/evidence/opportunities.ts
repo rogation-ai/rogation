@@ -6,6 +6,7 @@ import {
   opportunityToCluster,
 } from "@/db/schema";
 import { complete, type CompleteOpts } from "@/lib/llm/router";
+import { loadProductContext } from "@/lib/evidence/load-product-context";
 import {
   opportunityScore,
   type EffortEstimate,
@@ -61,6 +62,7 @@ export interface OpportunityRunResult {
   opportunitiesCreated: number;
   clustersUsed: number;
   promptHash: string;
+  contextUsed: boolean;
 }
 
 export async function runFullOpportunities(
@@ -99,6 +101,7 @@ export async function runFullOpportunities(
       opportunitiesCreated: 0,
       clustersUsed: 0,
       promptHash: opportunityScore.hash,
+      contextUsed: false,
     };
   }
   if (clusters.length > MAX_CLUSTERS_PER_RUN) {
@@ -132,6 +135,15 @@ export async function runFullOpportunities(
 
   const weights = await readWeights(ctx);
 
+  const runId = crypto.randomUUID();
+  const { contextUsed, promptOpts, productContextBlock } = await loadProductContext(
+    ctx.db,
+    ctx.accountId,
+    runId,
+    "opportunity",
+    opts,
+  );
+
   const { output } = await complete(
     opportunityScore,
     {
@@ -143,8 +155,9 @@ export async function runFullOpportunities(
         frequency: c.frequency,
         sampleQuotes: quotes.get(c.id),
       })),
+      productContext: productContextBlock,
     },
-    { cache: true, ...opts },
+    { cache: true, ...opts, ...promptOpts },
   );
 
   // Validate cluster labels and map back to real ids BEFORE any write.
@@ -166,12 +179,14 @@ export async function runFullOpportunities(
     output.opportunities,
     labelToClusterId,
     weights,
+    contextUsed,
   );
 
   return {
     opportunitiesCreated: created,
     clustersUsed: labeled.length,
     promptHash: opportunityScore.hash,
+    contextUsed,
   };
 }
 
@@ -198,6 +213,7 @@ async function persistOpportunities(
   opps: OpportunityPrimitive[],
   labelToClusterId: Map<string, string>,
   weights: WeightSet,
+  contextUsed?: boolean,
 ): Promise<number> {
   // Wipe prior opportunities for this account. opportunity_to_cluster
   // cascades; readers see a clean slate.
@@ -228,6 +244,7 @@ async function persistOpportunities(
       // here documents the regen contract: every wipe-and-reinsert
       // pass clears stale on the new rows.
       stale: false,
+      contextUsed: contextUsed ?? null,
       promptHash: opportunityScore.hash,
       clusterIds,
     };

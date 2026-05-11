@@ -80,6 +80,7 @@ export interface IncrementalResult {
 export async function runIncrementalClustering(
   ctx: IncrementalContext,
   opts: CompleteOpts = {},
+  productContext?: string,
 ): Promise<IncrementalResult> {
   // 1. Load live clusters + centroids.
   const existingClusters = await ctx.db
@@ -280,6 +281,7 @@ export async function runIncrementalClustering(
   const evidenceLabelToId = new Map<string, string>();
 
   const llmInput: SynthesisIncrementalInput = {
+    productContext,
     existing: existingClusters.map((c) => {
       const quotes = representativeQuotes.get(c.id) ?? [];
       return {

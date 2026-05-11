@@ -51,6 +51,7 @@ export interface SynthesisResult {
 export async function runFullClustering(
   ctx: SynthesisContext,
   opts: CompleteOpts = {},
+  productContext?: string,
 ): Promise<SynthesisResult> {
   const rows = await ctx.db
     .select({
@@ -82,7 +83,10 @@ export async function runFullClustering(
 
   const { output } = await complete(
     synthesisCluster,
-    { evidence: labeled.map((r) => ({ label: r.label, content: r.content })) },
+    {
+      evidence: labeled.map((r) => ({ label: r.label, content: r.content })),
+      productContext,
+    },
     { cache: true, ...opts },
   );
 
