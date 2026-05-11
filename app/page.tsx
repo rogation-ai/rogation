@@ -24,9 +24,7 @@ export default async function Home() {
           className="flex gap-8 text-sm"
           style={{ color: "var(--color-text-secondary)" }}
         >
-          <a href="#">Product</a>
           <Link href="/pricing">Pricing</Link>
-          <a href="#">Docs</a>
           <Link
             href="/sign-in"
             className="transition hover:text-[var(--color-text-primary)]"
