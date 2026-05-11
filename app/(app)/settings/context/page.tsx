@@ -7,8 +7,14 @@ const MAX_BRIEF_BYTES = 8_192;
 const DEBOUNCE_MS = 1_500;
 
 const STAGES = ["Pre-seed", "Seed", "Series A", "Series B", "Growth", "Public"] as const;
-const METRIC_OPTIONS = ["Retention", "Revenue", "Activation", "NPS", "Custom"] as const;
-type MetricOption = (typeof METRIC_OPTIONS)[number];
+const METRIC_OPTIONS: { value: MetricOption; description: string }[] = [
+  { value: "Retention", description: "Users coming back over time" },
+  { value: "Revenue", description: "MRR, ARR, or transaction volume" },
+  { value: "Activation", description: "New users reaching their aha moment" },
+  { value: "NPS", description: "Net Promoter Score from user surveys" },
+  { value: "Custom", description: "A metric specific to your product" },
+];
+type MetricOption = "Retention" | "Revenue" | "Activation" | "NPS" | "Custom";
 
 function byteLength(s: string): number {
   return new TextEncoder().encode(s).length;
@@ -221,19 +227,30 @@ export default function ProductContextPage(): React.JSX.Element {
             <span className="text-sm font-medium">Primary metrics</span>
             <SavedIndicator visible={!!savedFields.metrics} />
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {METRIC_OPTIONS.map((m) => (
               <button
-                key={m}
+                key={m.value}
                 type="button"
-                onClick={() => toggleMetric(m)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-[var(--radius-sm)] border transition-colors ${
-                  selectedMetrics.includes(m)
-                    ? "border-[var(--color-brand-accent)] bg-[var(--color-brand-accent)]/10 text-[var(--color-brand-accent)]"
-                    : "border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]"
+                onClick={() => toggleMetric(m.value)}
+                className={`flex flex-col items-start px-3 py-2.5 text-left rounded-[var(--radius-sm)] border transition-colors ${
+                  selectedMetrics.includes(m.value)
+                    ? "border-[var(--color-brand-accent)] bg-[var(--color-brand-accent)]/10"
+                    : "border-[var(--color-border-default)] hover:border-[var(--color-border-strong)]"
                 }`}
               >
-                {m}
+                <span
+                  className={`text-sm font-medium ${
+                    selectedMetrics.includes(m.value)
+                      ? "text-[var(--color-brand-accent)]"
+                      : "text-[var(--color-text-primary)]"
+                  }`}
+                >
+                  {m.value}
+                </span>
+                <span className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+                  {m.description}
+                </span>
               </button>
             ))}
           </div>
