@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { centroidOf, cosineSim, nearestClusters } from "@/lib/evidence/clustering/knn";
+import {
+  centroidOf,
+  cosineSim,
+  farthestFirstIndices,
+  nearestClusters,
+} from "@/lib/evidence/clustering/knn";
 import { ClusteringError } from "@/lib/evidence/clustering/errors";
 
 describe("centroidOf", () => {
@@ -93,5 +98,60 @@ describe("nearestClusters", () => {
 
   it("returns [] for no candidates", () => {
     expect(nearestClusters(query, [], 5)).toEqual([]);
+  });
+});
+
+describe("farthestFirstIndices", () => {
+  it("returns every index when items.length <= k", () => {
+    const items = [
+      { embedding: [1, 0] },
+      { embedding: [0, 1] },
+    ];
+    expect(farthestFirstIndices(items, 5)).toEqual([0, 1]);
+  });
+
+  it("returns [] for k <= 0 or empty input", () => {
+    expect(farthestFirstIndices([], 5)).toEqual([]);
+    expect(farthestFirstIndices([{ embedding: [1] }], 0)).toEqual([]);
+    expect(farthestFirstIndices([{ embedding: [1] }], -1)).toEqual([]);
+  });
+
+  it("picks the outliers across a clearly clustered set", () => {
+    // Three tight clusters around (1,0), (0,1), (-1,0). FFT should
+    // pick one representative from each, not three from the same
+    // corner like a recency sort would.
+    const items = [
+      { embedding: [1.0, 0.0] },
+      { embedding: [0.99, 0.01] },
+      { embedding: [0.98, 0.02] },
+      { embedding: [0.0, 1.0] },
+      { embedding: [0.01, 0.99] },
+      { embedding: [0.02, 0.98] },
+      { embedding: [-1.0, 0.0] },
+      { embedding: [-0.99, 0.01] },
+      { embedding: [-0.98, 0.02] },
+    ];
+    const picks = farthestFirstIndices(items, 3);
+    expect(picks).toHaveLength(3);
+    // Determine which cluster each pick belongs to by sign of x.
+    const clusters = picks.map((i) => {
+      const x = items[i]!.embedding[0]!;
+      const y = items[i]!.embedding[1]!;
+      if (x > 0.5) return "right";
+      if (x < -0.5) return "left";
+      if (y > 0.5) return "top";
+      return "other";
+    });
+    // All three distinct cluster labels covered.
+    expect(new Set(clusters).size).toBe(3);
+  });
+
+  it("never picks the same index twice", () => {
+    const items = Array.from({ length: 12 }, (_, i) => ({
+      embedding: [Math.cos(i), Math.sin(i)],
+    }));
+    const picks = farthestFirstIndices(items, 5);
+    expect(picks).toHaveLength(5);
+    expect(new Set(picks).size).toBe(5);
   });
 });

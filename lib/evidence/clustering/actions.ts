@@ -24,11 +24,12 @@
   not change which id survives.
 */
 
+import * as Sentry from "@sentry/nextjs";
 import { ClusteringError } from "./errors";
 import {
   assertLabelsResolve,
   assertMergeWinnersPresent,
-  assertNoDuplicateAssignments,
+  dedupeAssignmentsAcrossActions,
   assertSplitsHaveChildren,
 } from "./validators";
 
@@ -214,7 +215,20 @@ export function planClusterActions(
 
   const allEvidence = evidenceAssignments.flat();
   assertLabelsResolve(allEvidence, evidenceLabels, "evidence");
-  assertNoDuplicateAssignments(evidenceAssignments);
+
+  // Dedupe instead of throw: if the LLM assigns the same evidence
+  // label to two actions, keep the first and drop the rest. Logs the
+  // drop to Sentry so eval review can spot regressions. The downstream
+  // apply path already dedupes via onConflictDoNothing on the
+  // evidence_to_cluster PK, so this only changes visibility, not the
+  // final DB state.
+  const dropped = dedupeAssignmentsAcrossActions(evidenceAssignments);
+  if (dropped.length > 0) {
+    Sentry.captureMessage("clustering_duplicate_label", {
+      level: "warning",
+      extra: { droppedLabels: dropped },
+    });
+  }
 
   // Build the plan. Resolve every label to its uuid.
   const keeps: PlanKeep[] = [];

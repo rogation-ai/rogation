@@ -107,3 +107,78 @@ export function nearestClusters(
   scored.sort((a, b) => b.sim - a.sim);
   return scored.slice(0, k);
 }
+
+/**
+ * Farthest-first traversal: pick K indices from `items` such that the
+ * minimum pairwise distance between selected items is maximized.
+ * Distance is `1 - cosineSim`, so the picks span the embedding space
+ * instead of crowding a single theme. Used by cold-start clustering
+ * when the corpus exceeds the LLM's per-run cap — we want the LLM to
+ * see the shape of the whole corpus, not the 50 newest rows that
+ * might all be about the same pain.
+ *
+ * Seeded with the item farthest from the corpus centroid (i.e. the
+ * most "outlier" piece) so the first pick is deterministic and
+ * informative. Subsequent picks greedily maximize the minimum
+ * distance to anything already chosen.
+ *
+ * O(N×K) cosine ops total — K outer iterations × N candidate distance
+ * updates each. For N=200, K=50 that's ~10k cosine calls on 1536-d
+ * vectors; expect tens of milliseconds, not seconds.
+ *
+ * Returns indices into `items`, not items themselves, so callers
+ * can carry along whatever metadata they want without copy overhead.
+ * If `items.length <= k`, returns every index in input order.
+ */
+export function farthestFirstIndices(
+  items: ReadonlyArray<{ embedding: number[] }>,
+  k: number,
+): number[] {
+  if (k <= 0 || items.length === 0) return [];
+  if (items.length <= k) return items.map((_, i) => i);
+
+  const corpusCentroid = centroidOf(items.map((it) => it.embedding));
+  let seedIdx = 0;
+  let seedDist = -Infinity;
+  for (let i = 0; i < items.length; i++) {
+    const d = 1 - cosineSim(corpusCentroid, items[i]!.embedding);
+    if (d > seedDist) {
+      seedDist = d;
+      seedIdx = i;
+    }
+  }
+
+  const selected: number[] = [seedIdx];
+  const selectedMask = new Uint8Array(items.length);
+  selectedMask[seedIdx] = 1;
+  const minDistToSelected = new Array<number>(items.length);
+  for (let i = 0; i < items.length; i++) {
+    minDistToSelected[i] = selectedMask[i]
+      ? 0
+      : 1 - cosineSim(items[seedIdx]!.embedding, items[i]!.embedding);
+  }
+
+  while (selected.length < k) {
+    let bestIdx = -1;
+    let bestDist = -Infinity;
+    for (let i = 0; i < items.length; i++) {
+      if (selectedMask[i]) continue;
+      const d = minDistToSelected[i]!;
+      if (d > bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx === -1) break; // shouldn't happen given length check above
+    selected.push(bestIdx);
+    selectedMask[bestIdx] = 1;
+    // Maintain min distance to the running selection set.
+    for (let i = 0; i < items.length; i++) {
+      if (selectedMask[i]) continue;
+      const d = 1 - cosineSim(items[bestIdx]!.embedding, items[i]!.embedding);
+      if (d < minDistToSelected[i]!) minDistToSelected[i] = d;
+    }
+  }
+
+  return selected;
+}

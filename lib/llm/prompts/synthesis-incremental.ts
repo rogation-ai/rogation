@@ -91,13 +91,21 @@ Rules:
 - Every candidate evidence label MUST appear in EXACTLY ONE action
   (KEEP.attachEvidence, SPLIT.children[].evidenceLabels, or
   NEW.evidenceLabels). Never assign the same evidence twice.
+- Strongly prefer KEEP into an existing cluster over NEW. Only emit
+  NEW when no existing cluster is a reasonable home for the
+  candidate — fewer clusters is almost always better.
+- Avoid singleton NEW clusters. A NEW with only one supporting
+  evidence label is rarely worth emitting; fold the candidate into
+  the nearest existing cluster via KEEP instead. Only emit a
+  singleton NEW when the candidate is genuinely off-theme from
+  every existing cluster.
 - Any existing cluster that receives new candidate evidence requires
   an explicit KEEP action to attach it. Implicit-KEEP (no action
   emitted) only applies to clusters with no new evidence and no
   title/description change.
 - Every MERGE must list ≥2 DISTINCT cluster labels from <existing>.
 - Every SPLIT must produce ≥1 child with ≥1 evidence label each.
-- Every NEW must have ≥1 evidence label.
+- Every NEW must have ≥1 evidence label (ideally ≥2 — see above).
 - Each cluster label may appear in at most ONE action (KEEP, MERGE
   member, or SPLIT origin). Don't mix actions on the same cluster.
 - severity reflects business impact ("critical" = customers leave;

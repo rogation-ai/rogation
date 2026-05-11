@@ -4,6 +4,34 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.5.0] - 2026-05-11
+
+Clustering produces fewer, stronger clusters. Evidence counts on cluster cards update instantly after evidence deletion.
+
+### Fixed
+- Cluster card evidence count now updates immediately after deleting evidence, without requiring a page reload. Root cause: `evidence.delete` mutation was not invalidating the `insights.list`/`detail`/`byIds` TanStack Query caches. Three-line fix.
+- Stale UX copy in the delete confirmation dialog and success toast removed ("will look thinner after next refresh" no longer accurate).
+
+### Changed
+- `HIGH_CONF` cosine-similarity threshold for auto-attach lowered from 0.82 to 0.78, catching more obvious cluster matches without LLM calls.
+- Representative quotes per cluster sent to the LLM increased from 3 to 6, giving the model better signal about each cluster's theme.
+- KNN hints per candidate increased from 2 to 4 for richer context during uncertainty resolution.
+- Quote sampling switched from recency-ordered to centroid-nearest with a 24-row candidate window per cluster. Clusters whose centroid is missing (pre-backfill) fall back to recency.
+- Incremental clustering no longer throws past 50 candidates. The orchestrator chunks into up to 5 passes of 50 under one advisory lock.
+- Cold-start clustering uses farthest-first diversity sampling when the corpus exceeds the 50-row LLM prompt cap, then auto-continues with incremental chunks for the remainder. No more dead-end "too many evidence rows" error.
+- Duplicate evidence labels across clusters are now logged to Sentry and deduped (keep-first) instead of throwing. Gains visibility without losing the run.
+- Both clustering prompts now instruct the LLM to prefer fewer, bigger clusters and avoid singletons.
+
+### Added
+- Post-apply consolidation pass merges micro-clusters (frequency < 2) into their nearest non-tombstoned neighbour when centroid similarity is high enough (>= 0.70). Only runs on clusters created in the current run. Uses `skipDownstreamStale` to avoid re-staling just-linked opportunities.
+- `farthestFirstIndices` in `knn.ts` for embedding-space diversity sampling.
+- `CONSOLIDATION_MERGE_SIM` and `MIN_CLUSTER_SIZE` constants in `thresholds.ts`.
+- `ApplyOpts.skipDownstreamStale` flag on `applyClusterActions` for consolidation.
+- `ApplyResult.createdClusterIds` to track freshly-inserted clusters per apply call.
+- `IncrementalResult.candidatesRemaining` so the orchestrator knows when to loop.
+
+---
+
 ## [0.10.4.1] - 2026-05-11
 
 Page load performance: instant nav feedback and 44% smaller First Load JS.

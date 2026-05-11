@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertLabelsResolve,
   assertMergeWinnersPresent,
-  assertNoDuplicateAssignments,
+  dedupeAssignmentsAcrossActions,
   assertSplitsHaveChildren,
 } from "@/lib/evidence/clustering/validators";
 import { ClusteringError } from "@/lib/evidence/clustering/errors";
@@ -32,32 +32,44 @@ describe("assertLabelsResolve", () => {
   });
 });
 
-describe("assertNoDuplicateAssignments", () => {
-  it("passes when every label appears once across lists", () => {
-    expect(() =>
-      assertNoDuplicateAssignments([
-        ["E1", "E2"],
-        ["E3", "E4"],
-      ]),
-    ).not.toThrow();
+describe("dedupeAssignmentsAcrossActions", () => {
+  it("returns no drops and leaves lists untouched when every label is unique", () => {
+    const lists = [
+      ["E1", "E2"],
+      ["E3", "E4"],
+    ];
+    const dropped = dedupeAssignmentsAcrossActions(lists);
+    expect(dropped).toEqual([]);
+    expect(lists).toEqual([
+      ["E1", "E2"],
+      ["E3", "E4"],
+    ]);
   });
 
-  it("throws when a label appears in two lists", () => {
-    expect(() =>
-      assertNoDuplicateAssignments([
-        ["E1", "E2"],
-        ["E2", "E3"],
-      ]),
-    ).toThrow(ClusteringError);
+  it("drops duplicates across lists keeping the first occurrence", () => {
+    const lists = [
+      ["E1", "E2"],
+      ["E2", "E3"],
+    ];
+    const dropped = dedupeAssignmentsAcrossActions(lists);
+    expect(dropped).toEqual(["E2"]);
+    expect(lists).toEqual([
+      ["E1", "E2"],
+      ["E3"],
+    ]);
   });
 
-  it("throws when a label appears twice in the same list", () => {
-    try {
-      assertNoDuplicateAssignments([["E1", "E1"]]);
-      expect.fail("should have thrown");
-    } catch (e) {
-      expect((e as ClusteringError).code).toBe("duplicate_assignment");
-    }
+  it("drops duplicates within the same list keeping the first occurrence", () => {
+    const lists = [["E1", "E1", "E2", "E1"]];
+    const dropped = dedupeAssignmentsAcrossActions(lists);
+    expect(dropped).toEqual(["E1", "E1"]);
+    expect(lists).toEqual([["E1", "E2"]]);
+  });
+
+  it("handles empty input", () => {
+    const lists: string[][] = [];
+    expect(dedupeAssignmentsAcrossActions(lists)).toEqual([]);
+    expect(lists).toEqual([]);
   });
 });
 

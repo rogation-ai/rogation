@@ -35,23 +35,39 @@ export function assertLabelsResolve(
  * assigns the same E-label into two clusters (KEEP.attachEvidence,
  * SPLIT.children[].evidenceIds, or NEW.evidenceIds), the composite
  * PK on evidence_to_cluster would reject the second insert mid-apply.
- * Catching it pre-commit lets us abort cleanly with a typed error.
+ *
+ * Previously this threw. The router would then retry the whole run,
+ * burning tokens on a one-off LLM mistake that the `onConflictDoNothing`
+ * in apply.ts handled silently anyway. We now dedupe in place — keep
+ * the first occurrence across all assignment lists — and return the
+ * dropped labels so the caller can fire a Sentry warning. Same final
+ * write behaviour as before; we just gain visibility instead of
+ * losing the whole run.
+ *
+ * Mutates `labelLists` in place. Re-evaluate the throw-instead policy
+ * after one week of clean evals: if the LLM stops emitting duplicates,
+ * escalate to throw to catch real regressions.
  */
-export function assertNoDuplicateAssignments(
-  labelLists: ReadonlyArray<ReadonlyArray<string>>,
-): void {
+export function dedupeAssignmentsAcrossActions(
+  labelLists: Array<string[]>,
+): string[] {
   const seen = new Set<string>();
+  const dropped: string[] = [];
   for (const list of labelLists) {
-    for (const label of list) {
+    let i = 0;
+    while (i < list.length) {
+      const label = list[i]!;
       if (seen.has(label)) {
-        throw new ClusteringError(
-          "duplicate_assignment",
-          `evidence label "${label}" assigned to more than one cluster`,
-        );
+        dropped.push(label);
+        list.splice(i, 1);
+        // i stays — examine what shifted into this index
+      } else {
+        seen.add(label);
+        i++;
       }
-      seen.add(label);
     }
   }
+  return dropped;
 }
 
 /**

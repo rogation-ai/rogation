@@ -247,30 +247,37 @@ describe("planClusterActions", () => {
     ).toThrow(/E99/);
   });
 
-  it("rejects duplicate evidence assignment across actions", () => {
-    expect(() =>
-      planClusterActions(
-        {
-          actions: [
-            {
-              type: "KEEP",
-              clusterLabel: "C1",
-              newTitle: null,
-              newDescription: null,
-              attachEvidence: ["E1"],
-            },
-            {
-              type: "NEW",
-              title: "t",
-              description: "d",
-              severity: "low",
-              evidenceLabels: ["E1"],
-            },
-          ],
-        },
-        baseState(),
-      ),
-    ).toThrow(/duplicate_assignment|E1/);
+  it("dedupes duplicate evidence assignment across actions (keep first)", () => {
+    // Previously this threw. We now log + drop the duplicate so a
+    // one-off LLM violation doesn't waste the whole run — apply.ts's
+    // onConflictDoNothing was already silently dropping it; this just
+    // adds visibility (Sentry warning) and trims the plan IR honestly.
+    const plan = planClusterActions(
+      {
+        actions: [
+          {
+            type: "KEEP",
+            clusterLabel: "C1",
+            newTitle: null,
+            newDescription: null,
+            attachEvidence: ["E1"],
+          },
+          {
+            type: "NEW",
+            title: "t",
+            description: "d",
+            severity: "low",
+            evidenceLabels: ["E1"],
+          },
+        ],
+      },
+      baseState(),
+    );
+    // First action wins — KEEP holds E1, NEW is left with no labels.
+    expect(plan.keeps).toHaveLength(1);
+    expect(plan.keeps[0]!.attachEvidenceIds).toHaveLength(1);
+    expect(plan.newClusters).toHaveLength(1);
+    expect(plan.newClusters[0]!.evidenceIds).toHaveLength(0);
   });
 
   it("rejects SPLIT with zero children", () => {
