@@ -97,6 +97,59 @@ describe.skipIf(!hasTestDb)("runClustering dispatch (DB-backed, mocked LLM)", ()
       expect(mockComplete).not.toHaveBeenCalled();
     });
   });
+
+  it("orphans-only (freq=0 clusters + new evidence) → swept + mode: full", async () => {
+    // Regression: deleting all evidence leaves clusters with frequency=0
+    // and centroid=null. Re-uploading fresh evidence and clicking Generate
+    // previously routed to incremental (because the orphan count was >0),
+    // which then built an LLM prompt with empty <evidence> blocks and
+    // either failed silently or returned an empty plan. The orchestrator
+    // must now sweep orphans up front and cold-start over the new corpus.
+    const accountB = await seedAccount(handle, "b-orph@test.dev");
+
+    await handle.db.transaction(async (tx) => {
+      await bind(tx, accountB);
+
+      // Seed 2 orphan clusters (freq=0, centroid=null, not tombstoned) —
+      // exactly what evidence.delete leaves behind after recompute.
+      await insertCluster(tx, accountB, "orphan-1");
+      await insertCluster(tx, accountB, "orphan-2");
+
+      // Upload 3 fresh evidence pieces (no edges to the orphans).
+      await insertEvidenceWithEmbedding(tx, accountB, "n1", vec(1));
+      await insertEvidenceWithEmbedding(tx, accountB, "n2", vec(0, 1));
+      await insertEvidenceWithEmbedding(tx, accountB, "n3", vec(0, 0, 1));
+
+      mockComplete.mockClear();
+      mockComplete.mockResolvedValueOnce({
+        raw: "",
+        output: {
+          clusters: [
+            {
+              title: "fresh",
+              description: "desc",
+              severity: "medium",
+              evidenceLabels: ["E1", "E2", "E3"],
+            },
+          ],
+        },
+      });
+
+      const result = await runClustering({ db: tx, accountId: accountB });
+      expect(result.mode).toBe("full");
+      expect(result.clustersCreated).toBeGreaterThan(0);
+      expect(mockComplete).toHaveBeenCalledOnce();
+
+      // Orphans must be gone after the sweep + cold-start wipe.
+      const remaining = await tx
+        .select({ id: insightClusters.id, title: insightClusters.title })
+        .from(insightClusters)
+        .where(eq(insightClusters.accountId, accountB));
+      const titles = remaining.map((r) => r.title);
+      expect(titles).not.toContain("orphan-1");
+      expect(titles).not.toContain("orphan-2");
+    });
+  });
 });
 
 /* ----------------------------- helpers ----------------------------- */

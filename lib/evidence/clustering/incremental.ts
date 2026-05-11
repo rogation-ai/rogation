@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, inArray } from "drizzle-orm";
 import {
   evidence,
   evidenceEmbeddings,
@@ -98,6 +98,10 @@ export async function runIncrementalClustering(
       and(
         eq(insightClusters.accountId, ctx.accountId),
         isNull(insightClusters.tombstonedInto),
+        // Defense in depth: orchestrator sweeps orphans before
+        // dispatching here, but an orphan slipping through would
+        // poison the LLM prompt with an empty <evidence> block.
+        gt(insightClusters.frequency, 0),
       ),
     )
     .orderBy(desc(insightClusters.frequency))

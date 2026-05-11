@@ -4,6 +4,14 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.3.1] - 2026-05-11
+
+Re-cluster works again after deleting all evidence and uploading new pieces.
+
+### Fixed
+
+- **Generate cluster failed silently after a clean-slate re-upload.** Deleting every piece of evidence behind a cluster recomputes its frequency to 0 and clears its centroid, but the cluster row stays in the DB so `opportunity_to_cluster` paper trails resolve. `/insights` and `/build` already filtered those orphans out, but the clustering orchestrator did not — so on the next "Generate", orphan rows inflated the live-cluster count, the dispatch flipped to the incremental path, and the LLM got a prompt full of `<cluster>` blocks with empty `<evidence>` because no edges existed. Result was either a parser throw the worker stuffed into a recovery transaction or an empty plan that produced zero new clusters and a silent no-op; opportunities then regenerated against nothing. `runClustering` now sweeps orphan clusters (`frequency = 0`, not tombstoned) at the top of every run under the existing per-account advisory lock — `opportunity_to_cluster` cascades clean up the dangling edges automatically. The orchestrator's cluster-count query and `runIncrementalClustering`'s cluster-load query both gain a `frequency > 0` filter as defense in depth. The cold-start condition is now `zero live clusters` — dropping the `≤ 50 evidence` qualifier so a delete-everything-then-bulk-upload flow routes to the only correct path (full clustering) instead of dying on "no live clusters" in the incremental branch.
+
 ## [0.10.3.0] - 2026-05-11
 
 Product context as first-class LLM input. PMs paste a product brief and fill structured fields (ICP, stage, metric, features, roadmap) on a new /settings/context page. All five prompts consume the context when a per-account feature flag is enabled. Eval rotation compares context-on vs context-off via FeedbackThumbs.
