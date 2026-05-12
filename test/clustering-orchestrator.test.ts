@@ -19,6 +19,7 @@ import { hasTestDb, setupTestDb, type TestDbHandle } from "./setup-db";
 */
 
 const mockComplete = vi.fn();
+const mockEmbed = vi.fn();
 vi.mock("@/lib/llm/router", async () => {
   const actual = await vi.importActual<typeof import("@/lib/llm/router")>(
     "@/lib/llm/router",
@@ -26,6 +27,7 @@ vi.mock("@/lib/llm/router", async () => {
   return {
     ...actual,
     complete: (...args: unknown[]) => mockComplete(...args),
+    embed: (...args: unknown[]) => mockEmbed(...args),
   };
 });
 
@@ -95,6 +97,65 @@ describe.skipIf(!hasTestDb)("runClustering dispatch (DB-backed, mocked LLM)", ()
       expect(result.mode).toBe("incremental");
       // High-conf path skips the LLM entirely.
       expect(mockComplete).not.toHaveBeenCalled();
+    });
+  });
+
+  it("backfills missing embeddings before clustering", async () => {
+    const accountC = await seedAccount(handle, "c-embed@test.dev");
+
+    await handle.db.transaction(async (tx) => {
+      await bind(tx, accountC);
+
+      // Insert evidence WITHOUT an embedding row — simulates deferred
+      // embed that Inngest never processed.
+      const [noEmbed] = await tx
+        .insert(evidence)
+        .values({
+          accountId: accountC,
+          sourceType: "upload_text",
+          sourceRef: `src_noembed_${Date.now()}`,
+          content: "content without embedding",
+          contentHash: `hash_noembed_${Date.now()}`,
+        })
+        .returning({ id: evidence.id });
+      if (!noEmbed) throw new Error("insertEvidence");
+
+      // Also insert one WITH embedding to verify mixed state.
+      await insertEvidenceWithEmbedding(tx, accountC, "has-embed", vec(1));
+
+      mockComplete.mockClear();
+      mockEmbed.mockClear();
+      const backfillVec = vec(0, 1);
+      // embed() is now called with an array of contents; returns array of vectors.
+      mockEmbed.mockResolvedValueOnce([backfillVec]);
+
+      mockComplete.mockResolvedValueOnce({
+        raw: "",
+        output: {
+          clusters: [
+            {
+              title: "backfill cluster",
+              description: "desc",
+              severity: "medium",
+              evidenceLabels: ["E1", "E2"],
+            },
+          ],
+        },
+      });
+
+      const result = await runClustering({ db: tx, accountId: accountC });
+      expect(result.mode).toBe("full");
+
+      // embed() called once with an array containing only the missing row's content.
+      expect(mockEmbed).toHaveBeenCalledOnce();
+      expect(mockEmbed).toHaveBeenCalledWith(["content without embedding"]);
+
+      // The embedding row should now exist.
+      const [embRow] = await tx
+        .select({ evidenceId: evidenceEmbeddings.evidenceId })
+        .from(evidenceEmbeddings)
+        .where(eq(evidenceEmbeddings.evidenceId, noEmbed.id));
+      expect(embRow).toBeDefined();
     });
   });
 

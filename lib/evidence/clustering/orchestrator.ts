@@ -1,7 +1,8 @@
 import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
-import { insightClusters } from "@/db/schema";
+import { evidence, evidenceEmbeddings, insightClusters } from "@/db/schema";
 import type { Tx } from "@/db/scoped";
 import type { CompleteOpts } from "@/lib/llm/router";
+import { embed } from "@/lib/llm/router";
 import {
   deleteAllClustersForAccount,
   runFullClustering,
@@ -54,6 +55,37 @@ export interface OrchestratorResult {
   contextUsed: boolean;
 }
 
+async function ensureEmbeddings(db: Tx, accountId: string): Promise<number> {
+  const missing = await db
+    .select({ id: evidence.id, content: evidence.content })
+    .from(evidence)
+    .leftJoin(evidenceEmbeddings, eq(evidenceEmbeddings.evidenceId, evidence.id))
+    .where(
+      and(eq(evidence.accountId, accountId), isNull(evidenceEmbeddings.evidenceId)),
+    );
+
+  if (missing.length === 0) return 0;
+
+  const vectors = await embed(missing.map((r) => r.content));
+  let inserted = 0;
+
+  for (let i = 0; i < missing.length; i++) {
+    const vector = vectors[i];
+    if (!vector) continue;
+    await db
+      .insert(evidenceEmbeddings)
+      .values({
+        evidenceId: missing[i]!.id,
+        embedding: vector,
+        model: "text-embedding-3-small",
+      })
+      .onConflictDoNothing();
+    inserted++;
+  }
+
+  return inserted;
+}
+
 export async function runClustering(
   ctx: OrchestratorContext,
   opts: CompleteOpts = {},
@@ -62,6 +94,11 @@ export async function runClustering(
   await ctx.db.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended('cluster:' || ${ctx.accountId}, 0))`,
   );
+
+  // Backfill any evidence rows missing embeddings (deferred embed
+  // that Inngest never processed). Runs before the clustering branch
+  // decision so both full and incremental paths see a complete set.
+  await ensureEmbeddings(ctx.db, ctx.accountId);
 
   // Sweep orphan clusters (frequency=0, not tombstoned). These are
   // remnants of `evidence.delete` that recomputed aggregates to zero
