@@ -66,17 +66,24 @@ async function ensureEmbeddings(db: Tx, accountId: string): Promise<number> {
 
   if (missing.length === 0) return 0;
 
-  for (const row of missing) {
-    const [vector] = await embed(row.content);
+  const vectors = await embed(missing.map((r) => r.content));
+  let inserted = 0;
+
+  for (let i = 0; i < missing.length; i++) {
+    const vector = vectors[i];
     if (!vector) continue;
-    await db.insert(evidenceEmbeddings).values({
-      evidenceId: row.id,
-      embedding: vector,
-      model: "text-embedding-3-small",
-    });
+    await db
+      .insert(evidenceEmbeddings)
+      .values({
+        evidenceId: missing[i]!.id,
+        embedding: vector,
+        model: "text-embedding-3-small",
+      })
+      .onConflictDoNothing();
+    inserted++;
   }
 
-  return missing.length;
+  return inserted;
 }
 
 export async function runClustering(

@@ -126,6 +126,7 @@ describe.skipIf(!hasTestDb)("runClustering dispatch (DB-backed, mocked LLM)", ()
       mockComplete.mockClear();
       mockEmbed.mockClear();
       const backfillVec = vec(0, 1);
+      // embed() is now called with an array of contents; returns array of vectors.
       mockEmbed.mockResolvedValueOnce([backfillVec]);
 
       mockComplete.mockResolvedValueOnce({
@@ -145,10 +146,9 @@ describe.skipIf(!hasTestDb)("runClustering dispatch (DB-backed, mocked LLM)", ()
       const result = await runClustering({ db: tx, accountId: accountC });
       expect(result.mode).toBe("full");
 
-      // embed() should have been called exactly once — only for the
-      // row missing an embedding, not for the one that already has it.
+      // embed() called once with an array containing only the missing row's content.
       expect(mockEmbed).toHaveBeenCalledOnce();
-      expect(mockEmbed).toHaveBeenCalledWith("content without embedding");
+      expect(mockEmbed).toHaveBeenCalledWith(["content without embedding"]);
 
       // The embedding row should now exist.
       const [embRow] = await tx
