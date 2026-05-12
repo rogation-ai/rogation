@@ -201,6 +201,28 @@ export async function assertResourceLimit(
   return { resource, current, max, plan };
 }
 
+/* ----------------------------- connector gates ----------------------------- */
+
+/**
+ * Minimum plan tier required to connect each provider. Nango-managed
+ * connectors bypass assertResourceLimit("integrations") and use this
+ * map instead -- avoids accidentally unlocking Notion/Linear on Free
+ * when we only want Slack to be free.
+ */
+export const CONNECTOR_TIER: Record<string, PlanTier> = {
+  slack: "free",
+  hotjar: "solo",
+  zendesk: "pro",
+  gong: "pro",
+};
+
+export function canConnectProvider(provider: string, plan: PlanTier): boolean {
+  const requiredTier = CONNECTOR_TIER[provider];
+  if (!requiredTier) return false;
+  const tierOrder: PlanTier[] = ["free", "solo", "pro"];
+  return tierOrder.indexOf(plan) >= tierOrder.indexOf(requiredTier);
+}
+
 /* ------------------------------ feature gates ----------------------------- */
 
 export function canExport(plan: PlanTier, target: "markdown" | "linear" | "notion"): boolean {

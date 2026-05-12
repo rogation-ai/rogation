@@ -110,6 +110,16 @@ export const RATE_LIMIT_PRESETS = {
     requests: 10,
     window: "1 h",
   },
+  /**
+   * Nango webhook ingestion. By accountId. Each event triggers an
+   * ingestEvidence call + embed. 100/hour is generous for a single
+   * Slack channel (~4 msg/hour avg) but caps a runaway backfill or
+   * misconfigured sync from burning embed budget.
+   */
+  "connector-ingest": {
+    requests: 100,
+    window: "1 h",
+  },
 } as const;
 
 export type RateLimitPreset = keyof typeof RATE_LIMIT_PRESETS;

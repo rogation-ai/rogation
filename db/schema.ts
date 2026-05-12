@@ -55,6 +55,8 @@ export const evidenceSourceType = pgEnum("evidence_source_type", [
   "zendesk",
   "posthog",
   "canny",
+  "slack",
+  "hotjar",
 ]);
 
 export const severity = pgEnum("severity", [
@@ -88,6 +90,8 @@ export const integrationProvider = pgEnum("integration_provider", [
   "canny",
   "linear",
   "notion",
+  "slack",
+  "hotjar",
 ]);
 
 export const integrationStatusEnum = pgEnum("integration_status", [
@@ -193,6 +197,7 @@ export const evidence = pgTable(
     contentHash: varchar("content_hash", { length: 64 }).notNull(),
     segment: varchar("segment", { length: 128 }),
     date: timestamp("date", { withTimezone: true }),
+    sourceChannel: text("source_channel"),
     parseStatus: varchar("parse_status", { length: 32 })
       .notNull()
       .default("ready"),

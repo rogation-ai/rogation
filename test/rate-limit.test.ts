@@ -77,6 +77,7 @@ describe("rate-limit module (no Upstash configured)", () => {
     expect(Object.keys(RATE_LIMIT_PRESETS).sort()).toEqual([
       "checkout-create",
       "cluster-run",
+      "connector-ingest",
       "linear-push",
       "share-link",
       "spec-chat",

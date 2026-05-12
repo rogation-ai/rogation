@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Nango from "@nangohq/frontend";
 import { trpc } from "@/lib/trpc";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
 
@@ -81,6 +82,11 @@ function IntegrationsSettingsInner(): React.JSX.Element {
     () => listQ.data?.find((r) => r.provider === "notion"),
     [listQ.data],
   );
+  const slack = useMemo(
+    () => listQ.data?.find((r) => r.provider === "slack"),
+    [listQ.data],
+  );
+  // Hotjar deferred to L1.5 (Nango doesn't support it; build from scratch after Slack thesis validates)
 
   return (
     <main className="space-y-8">
@@ -92,7 +98,7 @@ function IntegrationsSettingsInner(): React.JSX.Element {
           Integrations
         </h1>
         <p style={{ color: "var(--color-text-secondary)" }}>
-          Connect where your team already works. Specs push as native issues.
+          Connect your feedback sources and where your team works.
         </p>
       </header>
 
@@ -105,10 +111,7 @@ function IntegrationsSettingsInner(): React.JSX.Element {
               banner.kind === "ok"
                 ? "var(--color-success)"
                 : "var(--color-danger)",
-            background:
-              banner.kind === "ok"
-                ? "var(--color-surface-raised)"
-                : "var(--color-surface-raised)",
+            background: "var(--color-surface-raised)",
             color: "var(--color-text-primary)",
           }}
         >
@@ -116,21 +119,48 @@ function IntegrationsSettingsInner(): React.JSX.Element {
         </div>
       ) : null}
 
-      {listQ.isLoading ? <SkeletonList count={2} /> : null}
+      {listQ.isLoading ? <SkeletonList count={4} /> : null}
 
-      <LinearCard
-        connected={!!linear?.connected}
-        config={linear?.config ?? null}
-        status={linear?.status ?? null}
-        configured={providersQ.data?.linear.configured ?? true}
-      />
+      <div className="space-y-2">
+        <h3
+          className="text-xs font-medium uppercase tracking-wider"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Feedback Sources
+        </h3>
+        <NangoConnectorCard
+          provider="slack"
+          title="Slack"
+          description="Auto-ingest feedback from Slack channels. Internal team discussions become evidence."
+          connected={!!slack?.connected}
+          status={slack?.status ?? null}
+          lastSyncedAt={slack?.lastSyncedAt ?? null}
+          configured={providersQ.data?.slack?.configured ?? false}
+          allowed={providersQ.data?.slack?.allowed ?? false}
+        />
+      </div>
 
-      <NotionCard
-        connected={!!notion?.connected}
-        config={notion?.config ?? null}
-        status={notion?.status ?? null}
-        configured={providersQ.data?.notion.configured ?? true}
-      />
+      <div className="space-y-2">
+        <h3
+          className="text-xs font-medium uppercase tracking-wider"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          Export Destinations
+        </h3>
+        <LinearCard
+          connected={!!linear?.connected}
+          config={linear?.config ?? null}
+          status={linear?.status ?? null}
+          configured={providersQ.data?.linear.configured ?? true}
+        />
+
+        <NotionCard
+          connected={!!notion?.connected}
+          config={notion?.config ?? null}
+          status={notion?.status ?? null}
+          configured={providersQ.data?.notion.configured ?? true}
+        />
+      </div>
     </main>
   );
 }
@@ -580,5 +610,363 @@ function NotionCard({
         </div>
       </div>
     </section>
+  );
+}
+
+function NangoConnectorCard({
+  provider,
+  title,
+  description,
+  connected,
+  status,
+  lastSyncedAt,
+  configured,
+  allowed,
+}: {
+  provider: "slack" | "hotjar";
+  title: string;
+  description: string;
+  connected: boolean;
+  status: string | null;
+  lastSyncedAt: Date | string | null;
+  configured: boolean;
+  allowed: boolean;
+}): React.JSX.Element {
+  const utils = trpc.useUtils();
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const connectMutation = trpc.integrations.connectNango.useMutation({
+    onSuccess: () => {
+      setConnectError(null);
+      utils.integrations.list.invalidate();
+    },
+    onError: (err) => {
+      setConnectError(err.message);
+    },
+  });
+
+  const getTokenMutation = trpc.integrations.nangoConnectToken.useMutation();
+
+  const disconnectMutation = trpc.integrations.disconnectNango.useMutation({
+    onSuccess: () => {
+      utils.integrations.list.invalidate();
+    },
+    onError: (err) => {
+      setConnectError(err.message);
+    },
+  });
+
+  const onConnect = useCallback(async () => {
+    setIsConnecting(true);
+    setConnectError(null);
+
+    try {
+      const { token } = await getTokenMutation.mutateAsync();
+      const nango = new Nango({ connectSessionToken: token });
+      const result = await nango.auth(provider);
+      if (result.connectionId) {
+        connectMutation.mutate({
+          provider,
+          connectionId: result.connectionId,
+        });
+      }
+    } catch (err) {
+      setConnectError(
+        err instanceof Error ? err.message : "Connection failed. Try again.",
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [provider, connectMutation, getTokenMutation]);
+
+  const syncTime = lastSyncedAt
+    ? new Date(lastSyncedAt).toLocaleString()
+    : null;
+
+  return (
+    <section
+      className="rounded-lg border p-6"
+      style={{
+        borderColor: "var(--color-border-subtle)",
+        background: "var(--color-surface-raised)",
+      }}
+    >
+      <div className="flex items-start justify-between gap-6">
+        <div className="space-y-1">
+          <h2
+            className="text-lg font-semibold"
+            style={{ color: "var(--color-text-primary)" }}
+          >
+            {title}
+          </h2>
+          <p
+            className="text-sm"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            {description}
+          </p>
+          {connected && syncTime ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Last sync:{" "}
+              <span style={{ color: "var(--color-text-primary)" }}>
+                {syncTime}
+              </span>
+            </p>
+          ) : null}
+          {connected && provider === "slack" ? (
+            <SelectedChannelsDisplay />
+          ) : null}
+          {status === "token_invalid" ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-danger)" }}
+            >
+              Connection lost. Reconnect to resume syncing.
+            </p>
+          ) : null}
+          {connectError ? (
+            <p
+              className="pt-2 text-sm"
+              style={{ color: "var(--color-danger)" }}
+              role="alert"
+            >
+              {connectError}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {!configured ? (
+            <span
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--color-border-subtle)",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              Coming soon
+            </span>
+          ) : !allowed ? (
+            <span
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--color-border-subtle)",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              Upgrade to connect
+            </span>
+          ) : connected ? (
+            <>
+              <button
+                type="button"
+                onClick={onConnect}
+                disabled={isConnecting}
+                className="rounded-md border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "var(--color-border-subtle)",
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                {isConnecting ? "Connecting..." : "Reconnect"}
+              </button>
+              <button
+                type="button"
+                onClick={() => disconnectMutation.mutate({ provider })}
+                disabled={disconnectMutation.isPending}
+                className="rounded-md px-3 py-2 text-sm"
+                style={{ color: "var(--color-danger)" }}
+              >
+                {disconnectMutation.isPending
+                  ? "Disconnecting..."
+                  : "Disconnect"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={isConnecting}
+              className="rounded-md px-4 py-2 text-sm font-medium"
+              style={{
+                background: "var(--color-brand-accent)",
+                color: "var(--color-text-inverse)",
+              }}
+            >
+              {isConnecting ? "Connecting..." : `Connect ${title}`}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {connected && provider === "slack" ? (
+        <div
+          className="mt-6 border-t pt-6"
+          style={{ borderColor: "var(--color-border-subtle)" }}
+        >
+          <SlackChannelPicker />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SelectedChannelsDisplay(): React.JSX.Element | null {
+  const channelsQ = trpc.integrations.slackChannels.useQuery(undefined, {
+    retry: false,
+  });
+
+  const selected = channelsQ.data?.selectedChannels ?? [];
+  if (selected.length === 0) return null;
+
+  return (
+    <p
+      className="pt-2 text-sm"
+      style={{ color: "var(--color-text-secondary)" }}
+    >
+      Channels:{" "}
+      <span style={{ color: "var(--color-text-primary)" }}>
+        {selected.map((c) => `#${c.name}`).join(", ")}
+      </span>
+    </p>
+  );
+}
+
+function SlackChannelPicker(): React.JSX.Element {
+  const utils = trpc.useUtils();
+  const channelsQ = trpc.integrations.slackChannels.useQuery(undefined, {
+    retry: false,
+  });
+  const setChannels = trpc.integrations.setSlackChannels.useMutation({
+    onSuccess: () => utils.integrations.slackChannels.invalidate(),
+  });
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (channelsQ.data?.selectedChannels) {
+      setSelected(new Set(channelsQ.data.selectedChannels.map((c) => c.id)));
+    }
+  }, [channelsQ.data?.selectedChannels]);
+
+  if (channelsQ.isLoading) return <SkeletonList count={1} />;
+
+  if (channelsQ.isError) {
+    return (
+      <p className="text-sm" style={{ color: "var(--color-danger)" }}>
+        {channelsQ.error?.message ?? "Couldn't load channels."}
+      </p>
+    );
+  }
+
+  const channels = channelsQ.data?.channels ?? [];
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < 5) {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const onSave = () => {
+    const picked = channels
+      .filter((c) => selected.has(c.id))
+      .map((c) => ({ id: c.id, name: c.name }));
+    if (picked.length > 0) {
+      setChannels.mutate({ channels: picked });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <label
+        className="block text-sm font-medium"
+        style={{ color: "var(--color-text-primary)" }}
+      >
+        Channels to monitor (max 5)
+      </label>
+      <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
+        Messages from these channels become evidence for clustering.
+      </p>
+      <div
+        className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-1"
+        style={{
+          borderColor: "var(--color-border-subtle)",
+          background: "var(--color-surface-app)",
+        }}
+      >
+        {channels.length === 0 ? (
+          <p
+            className="text-sm p-2"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            No channels visible to the Slack bot.
+          </p>
+        ) : (
+          channels.map((c) => (
+            <label
+              key={c.id}
+              className="flex items-center gap-2 rounded px-2 py-1.5 cursor-pointer hover:bg-black/5"
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(c.id)}
+                onChange={() => toggle(c.id)}
+                disabled={!selected.has(c.id) && selected.size >= 5}
+                className="rounded"
+              />
+              <span
+                className="text-sm"
+                style={{ color: "var(--color-text-primary)" }}
+              >
+                #{c.name}
+              </span>
+              <span
+                className="text-xs ml-auto"
+                style={{ color: "var(--color-text-tertiary)" }}
+              >
+                {c.memberCount} members
+              </span>
+            </label>
+          ))
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={selected.size === 0 || setChannels.isPending}
+          onClick={onSave}
+          className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
+          style={{
+            background: "var(--color-brand-accent)",
+            color: "var(--color-text-inverse)",
+          }}
+        >
+          {setChannels.isPending ? "Saving..." : "Save channels"}
+        </button>
+        {setChannels.isSuccess ? (
+          <p className="text-xs" style={{ color: "var(--color-success)" }}>
+            Saved.
+          </p>
+        ) : null}
+        {selected.size >= 5 ? (
+          <p
+            className="text-xs"
+            style={{ color: "var(--color-text-tertiary)" }}
+          >
+            Maximum 5 channels reached.
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -64,6 +64,13 @@
       "when": 1778500000000,
       "tag": "0008_product_context",
       "breakpoints": false
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1778600000000,
+      "tag": "0009_nango_connectors",
+      "breakpoints": false
     }
   ]
 }
