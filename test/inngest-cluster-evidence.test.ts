@@ -18,6 +18,7 @@ import { hasTestDb, setupTestDb, type TestDbHandle } from "./setup-db";
 */
 
 const mockComplete = vi.fn();
+const mockEmbed = vi.fn();
 vi.mock("@/lib/llm/router", async () => {
   const actual = await vi.importActual<typeof import("@/lib/llm/router")>(
     "@/lib/llm/router",
@@ -25,6 +26,7 @@ vi.mock("@/lib/llm/router", async () => {
   return {
     ...actual,
     complete: (...args: unknown[]) => mockComplete(...args),
+    embed: (...args: unknown[]) => mockEmbed(...args),
   };
 });
 
@@ -99,6 +101,10 @@ describe.skipIf(!hasTestDb)("cluster-evidence worker (DB-backed)", () => {
   });
 
   it("ClusteringError propagates to insight_run.error as the code", async () => {
+    // ensureEmbeddings will try to backfill; return empty so the row
+    // stays un-embedded and the incremental path throws embeddings_pending.
+    mockEmbed.mockResolvedValue([]);
+
     // Seed evidence but no embedding on one row → embeddings_pending.
     await handle.db.transaction(async (tx) => {
       await bind(tx, accountA);
