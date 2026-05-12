@@ -4,6 +4,13 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.5.1] - 2026-05-12
+
+### Fixed
+- Clustering no longer fails with `embeddings_pending` when evidence was uploaded via file upload and the Inngest embedding worker did not process the embed events. The orchestrator now backfills missing embeddings inline before either the full or incremental clustering path runs.
+
+---
+
 ## [0.10.5.0] - 2026-05-11
 
 Clustering produces fewer, stronger clusters. Evidence counts on cluster cards update instantly after evidence deletion.
