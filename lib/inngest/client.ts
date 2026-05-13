@@ -26,6 +26,14 @@ export interface ClusterRequestedData {
   /** Pre-created insight_run row id. Worker updates status on it. */
   runId: string;
   accountId: string;
+  scopeId?: string;
+}
+
+export const EVENT_SCOPE_REROUTE_REQUESTED = "scopes/reroute.requested" as const;
+
+export interface ScopeRerouteRequestedData {
+  accountId: string;
+  scopeId: string;
 }
 
 export const inngest = new Inngest({

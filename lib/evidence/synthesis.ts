@@ -18,6 +18,7 @@ import {
 } from "@/lib/evidence/clustering/validators";
 import { farthestFirstIndices } from "@/lib/evidence/clustering/knn";
 import type { ClusterPlan } from "@/lib/evidence/clustering/actions";
+import { withScopeFilter, type ScopeFilter } from "@/lib/evidence/scope-filter";
 
 /*
   Full-corpus clustering — Phase A path, now refactored to emit a
@@ -46,6 +47,7 @@ const MAX_EVIDENCE_PER_RUN = 50;
 export interface SynthesisContext {
   db: Tx;
   accountId: string;
+  scopeId?: ScopeFilter;
 }
 
 export interface SynthesisResult {
@@ -64,6 +66,7 @@ export async function runFullClustering(
   // representative sample via farthest-first traversal (diversity
   // sampling) instead of the 50 newest, which would skew toward
   // whatever the PM uploaded last and miss the shape of the corpus.
+  const scopeWhere = withScopeFilter(ctx.scopeId ?? null, evidence.scopeId);
   const rows = await ctx.db
     .select({
       id: evidence.id,
@@ -75,7 +78,7 @@ export async function runFullClustering(
       evidenceEmbeddings,
       eq(evidenceEmbeddings.evidenceId, evidence.id),
     )
-    .where(eq(evidence.accountId, ctx.accountId))
+    .where(and(eq(evidence.accountId, ctx.accountId), scopeWhere))
     .orderBy(desc(evidence.createdAt));
 
   if (rows.length === 0) {
@@ -215,10 +218,12 @@ function buildFullPlan(
 export async function deleteAllClustersForAccount(
   tx: Tx,
   accountId: string,
+  scopeId?: string,
 ): Promise<void> {
+  const scopeWhere = withScopeFilter(scopeId ?? null, insightClusters.scopeId);
   await tx
     .delete(insightClusters)
-    .where(eq(insightClusters.accountId, accountId));
+    .where(and(eq(insightClusters.accountId, accountId), scopeWhere));
 }
 
 /* ----------------------- read helpers for the router ----------------------- */
@@ -235,6 +240,7 @@ export interface ClusterListRow {
 export async function listClusters(
   ctx: SynthesisContext,
 ): Promise<ClusterListRow[]> {
+  const scopeWhere = withScopeFilter(ctx.scopeId, insightClusters.scopeId);
   return ctx.db
     .select({
       id: insightClusters.id,
@@ -250,6 +256,7 @@ export async function listClusters(
         eq(insightClusters.accountId, ctx.accountId),
         isNull(insightClusters.tombstonedInto),
         gt(insightClusters.frequency, 0),
+        scopeWhere,
       ),
     )
     .orderBy(desc(insightClusters.frequency));

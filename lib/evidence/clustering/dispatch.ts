@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Tx } from "@/db/scoped";
 import { insightRuns } from "@/db/schema";
 import {
@@ -28,6 +28,7 @@ import { checkLimit } from "@/lib/rate-limit";
 export interface DispatchContext {
   db: Tx;
   accountId: string;
+  scopeId?: string;
 }
 
 const NON_TERMINAL_STATUSES = ["pending", "running"] as const;
@@ -42,6 +43,9 @@ export async function dispatchClusterRun(
   // way, but each re-cluster burns ~$0.30 of Sonnet — spending twice
   // for the same intent is pure waste. RLS scopes this SELECT to the
   // caller's account.
+  const scopeDedup = ctx.scopeId
+    ? eq(insightRuns.scopeId, ctx.scopeId)
+    : isNull(insightRuns.scopeId);
   const [existing] = await ctx.db
     .select({ id: insightRuns.id })
     .from(insightRuns)
@@ -49,6 +53,7 @@ export async function dispatchClusterRun(
       and(
         eq(insightRuns.accountId, ctx.accountId),
         inArray(insightRuns.status, NON_TERMINAL_STATUSES),
+        scopeDedup,
       ),
     )
     .limit(1);
@@ -78,6 +83,7 @@ export async function dispatchClusterRun(
       accountId: ctx.accountId,
       status: "pending",
       mode: "incremental",
+      scopeId: ctx.scopeId ?? null,
     })
     .returning({ id: insightRuns.id });
   if (!row) {
@@ -97,7 +103,11 @@ export async function dispatchClusterRun(
   // event that no-ops inside the worker is the better failure mode.
   await inngest.send({
     name: EVENT_CLUSTER_REQUESTED,
-    data: { runId: row.id, accountId: ctx.accountId },
+    data: {
+      runId: row.id,
+      accountId: ctx.accountId,
+      ...(ctx.scopeId ? { scopeId: ctx.scopeId } : {}),
+    },
   });
 
   return { runId: row.id, deduped: false };

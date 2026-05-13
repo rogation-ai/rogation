@@ -80,6 +80,7 @@ export interface ApplyOpts {
    * consolidation caller flips it.
    */
   skipDownstreamStale?: boolean;
+  scopeId?: string;
 }
 
 export async function applyClusterActions(
@@ -317,6 +318,7 @@ export async function applyClusterActions(
         frequency: newCluster.evidenceIds.length,
         promptHash,
         contextUsed: contextUsed ?? null,
+        scopeId: opts.scopeId ?? null,
       })
       .returning({ id: insightClusters.id });
     if (!inserted) {

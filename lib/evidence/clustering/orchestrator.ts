@@ -12,6 +12,7 @@ import { applyClusterActions } from "./apply";
 import { runConsolidationPass } from "./consolidation";
 import type { InsightRunMode } from "@/db/schema";
 import { loadProductContext } from "@/lib/evidence/load-product-context";
+import { withScopeFilter } from "@/lib/evidence/scope-filter";
 
 /*
   Re-cluster dispatch (design §7 rule).
@@ -45,6 +46,7 @@ import { loadProductContext } from "@/lib/evidence/load-product-context";
 export interface OrchestratorContext {
   db: Tx;
   accountId: string;
+  scopeId?: string;
 }
 
 export interface OrchestratorResult {
@@ -55,13 +57,14 @@ export interface OrchestratorResult {
   contextUsed: boolean;
 }
 
-async function ensureEmbeddings(db: Tx, accountId: string): Promise<number> {
+async function ensureEmbeddings(db: Tx, accountId: string, scopeId?: string): Promise<number> {
+  const scopeWhere = withScopeFilter(scopeId ?? null, evidence.scopeId);
   const missing = await db
     .select({ id: evidence.id, content: evidence.content })
     .from(evidence)
     .leftJoin(evidenceEmbeddings, eq(evidenceEmbeddings.evidenceId, evidence.id))
     .where(
-      and(eq(evidence.accountId, accountId), isNull(evidenceEmbeddings.evidenceId)),
+      and(eq(evidence.accountId, accountId), isNull(evidenceEmbeddings.evidenceId), scopeWhere),
     );
 
   if (missing.length === 0) return 0;
@@ -91,14 +94,17 @@ export async function runClustering(
   opts: CompleteOpts = {},
   runId?: string,
 ): Promise<OrchestratorResult> {
+  const lockKey = ctx.scopeId
+    ? `cluster:${ctx.accountId}:${ctx.scopeId}`
+    : `cluster:${ctx.accountId}`;
   await ctx.db.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended('cluster:' || ${ctx.accountId}, 0))`,
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
   );
 
   // Backfill any evidence rows missing embeddings (deferred embed
   // that Inngest never processed). Runs before the clustering branch
   // decision so both full and incremental paths see a complete set.
-  await ensureEmbeddings(ctx.db, ctx.accountId);
+  await ensureEmbeddings(ctx.db, ctx.accountId, ctx.scopeId);
 
   // Sweep orphan clusters (frequency=0, not tombstoned). These are
   // remnants of `evidence.delete` that recomputed aggregates to zero
@@ -110,6 +116,7 @@ export async function runClustering(
   // because no edges exist. ON DELETE CASCADE on opportunity_to_cluster
   // removes the dangling edges; CitationChip renders "Cluster
   // unavailable" for any spec citation still naming the gone id.
+  const scopeClusterWhere = withScopeFilter(ctx.scopeId ?? null, insightClusters.scopeId);
   await ctx.db
     .delete(insightClusters)
     .where(
@@ -117,6 +124,7 @@ export async function runClustering(
         eq(insightClusters.accountId, ctx.accountId),
         isNull(insightClusters.tombstonedInto),
         eq(insightClusters.frequency, 0),
+        scopeClusterWhere,
       ),
     );
 
@@ -138,6 +146,7 @@ export async function runClustering(
         eq(insightClusters.accountId, ctx.accountId),
         isNull(insightClusters.tombstonedInto),
         gt(insightClusters.frequency, 0),
+        scopeClusterWhere,
       ),
     );
 
@@ -161,9 +170,9 @@ export async function runClustering(
 
   if (existingClusters === 0) {
     mode = "full";
-    await deleteAllClustersForAccount(ctx.db, ctx.accountId);
+    await deleteAllClustersForAccount(ctx.db, ctx.accountId, ctx.scopeId);
     const { plan, evidenceUsed, promptHash } = await runFullClustering(
-      { db: ctx.db, accountId: ctx.accountId },
+      { db: ctx.db, accountId: ctx.accountId, scopeId: ctx.scopeId },
       mergedOpts,
       productContextBlock,
     );
@@ -173,6 +182,7 @@ export async function runClustering(
       ctx.accountId,
       promptHash,
       contextUsed,
+      { scopeId: ctx.scopeId },
     );
     totalClustersCreated += clustersCreated;
     totalEvidenceUsed += evidenceUsed;
@@ -195,7 +205,7 @@ export async function runClustering(
     let chunkResult: Awaited<ReturnType<typeof runIncrementalClustering>>;
     try {
       chunkResult = await runIncrementalClustering(
-        { db: ctx.db, accountId: ctx.accountId },
+        { db: ctx.db, accountId: ctx.accountId, scopeId: ctx.scopeId },
         mergedOpts,
         productContextBlock,
       );
@@ -221,6 +231,7 @@ export async function runClustering(
       ctx.accountId,
       promptHash,
       contextUsed,
+      { scopeId: ctx.scopeId },
     );
     totalClustersCreated += clustersCreated;
     totalEvidenceUsed += evidenceUsed;

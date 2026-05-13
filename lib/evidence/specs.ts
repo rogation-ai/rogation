@@ -14,6 +14,7 @@ import { specGenerate } from "@/lib/llm/prompts/spec-generate";
 import { specRefine } from "@/lib/llm/prompts/spec-refine";
 import { gradeSpec, type ReadinessChecklist } from "@/lib/spec/readiness";
 import { renderSpecMarkdown } from "@/lib/spec/renderers/markdown";
+import { withScopeFilter, type ScopeFilter } from "@/lib/evidence/scope-filter";
 import type { SpecIR } from "@/lib/spec/ir";
 import type { Tx } from "@/db/scoped";
 
@@ -44,6 +45,7 @@ const MAX_CLUSTERS_PER_SPEC = 20;
 export interface SpecCtx {
   db: Tx;
   accountId: string;
+  scopeId?: ScopeFilter;
 }
 
 export interface SpecGenerateResult {
@@ -630,7 +632,7 @@ export async function listSpecs(
       opportunitiesTbl,
       eq(opportunitiesTbl.id, specs.opportunityId),
     )
-    .where(eq(specs.accountId, ctx.accountId))
+    .where(and(eq(specs.accountId, ctx.accountId), withScopeFilter(ctx.scopeId, specs.scopeId)))
     .orderBy(desc(specs.updatedAt));
 
   const byOpp = new Map<string, (typeof rows)[number]>();
