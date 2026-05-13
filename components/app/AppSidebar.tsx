@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { OrganizationSwitcher, useOrganizationList } from "@clerk/nextjs";
 import { trpc } from "@/lib/trpc";
 import { bandFor, bandPct } from "@/components/ui/PlanMeter";
+import { ScopeSelector } from "@/components/app/ScopeSelector";
 import type { LimitValue, PlanTier } from "@/lib/plans";
 
 /*
@@ -60,6 +61,7 @@ export function AppSidebar(): React.JSX.Element {
       </div>
 
       <SidebarOrgSwitcher />
+      <ScopeSelector />
 
       <nav className="flex flex-col gap-px px-2">
         {NAV.map((item) => (

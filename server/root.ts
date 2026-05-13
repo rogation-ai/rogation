@@ -6,6 +6,7 @@ import { insightsRouter } from "@/server/routers/insights";
 import { integrationsRouter } from "@/server/routers/integrations";
 import { opportunitiesRouter } from "@/server/routers/opportunities";
 import { outcomesRouter } from "@/server/routers/outcomes";
+import { scopesRouter } from "@/server/routers/scopes";
 import { specsRouter } from "@/server/routers/specs";
 import { router } from "@/server/trpc";
 
@@ -21,6 +22,7 @@ export const appRouter = router({
   integrations: integrationsRouter,
   opportunities: opportunitiesRouter,
   outcomes: outcomesRouter,
+  scopes: scopesRouter,
   specs: specsRouter,
 });
 

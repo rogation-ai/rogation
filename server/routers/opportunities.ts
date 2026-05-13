@@ -33,9 +33,19 @@ const weightSchema: z.ZodType<WeightSet> = z.object({
 });
 
 export const opportunitiesRouter = router({
-  list: authedProcedure.query(async ({ ctx }) => {
-    return listOpportunities({ db: ctx.db, accountId: ctx.accountId });
-  }),
+  list: authedProcedure
+    .input(
+      z.object({
+        scopeId: z.string().uuid().or(z.literal("unscoped")).nullish(),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return listOpportunities({
+        db: ctx.db,
+        accountId: ctx.accountId,
+        scopeId: input?.scopeId,
+      });
+    }),
 
   forCluster: authedProcedure
     .input(z.object({ clusterId: z.string().uuid() }))
