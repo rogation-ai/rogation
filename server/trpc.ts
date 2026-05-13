@@ -1,12 +1,15 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import { db } from "@/db/client";
 import { bindAccountToTx, type Tx } from "@/db/scoped";
 import { accounts, users } from "@/db/schema";
-import { provisionAccountForClerkUser } from "@/lib/account/provision";
+import {
+  provisionAccountForClerkUser,
+  provisionAccountForClerkOrg,
+} from "@/lib/account/provision";
 import { EVENTS } from "@/lib/analytics/events";
 import {
   captureServer,
@@ -77,6 +80,7 @@ export async function createContext(): Promise<Context> {
   }
 
   const clerkUserId = session.userId ?? null;
+  const clerkOrgId = (session as { orgId?: string | null }).orgId ?? null;
 
   if (!clerkUserId) {
     return {
@@ -88,9 +92,63 @@ export async function createContext(): Promise<Context> {
     };
   }
 
-  // This join runs OUTSIDE the RLS transaction because we don't yet
-  // know the account. Running as table owner, so RLS doesn't filter.
-  // Single keyed lookup, no cross-account exposure.
+  // Org context: user has an active Clerk Organization selected.
+  // Resolve the account by clerkOrgId, not by clerkUserId.
+  if (clerkOrgId) {
+    const [orgRow] = await db
+      .select({
+        userId: users.id,
+        accountId: accounts.id,
+        plan: accounts.plan,
+      })
+      .from(accounts)
+      .innerJoin(users, eq(users.accountId, accounts.id))
+      .where(
+        and(
+          eq(accounts.clerkOrgId, clerkOrgId),
+          eq(users.clerkUserId, clerkUserId),
+        ),
+      )
+      .limit(1);
+
+    if (orgRow) {
+      return {
+        clerkUserId,
+        userId: orgRow.userId,
+        accountId: orgRow.accountId,
+        plan: orgRow.plan,
+        db,
+      };
+    }
+
+    // Lazy fallback: org account exists but user hasn't been linked yet
+    // (webhook race for organizationMembership.created).
+    const user = await currentUser().catch(() => null);
+    const email =
+      user?.primaryEmailAddress?.emailAddress ??
+      user?.emailAddresses?.[0]?.emailAddress;
+
+    if (email) {
+      const provisioned = await provisionAccountForClerkOrg({
+        clerkOrgId,
+        clerkUserId,
+        email,
+      });
+      return {
+        clerkUserId,
+        userId: provisioned.userId,
+        accountId: provisioned.accountId,
+        plan: provisioned.plan,
+        db,
+      };
+    }
+
+    return { clerkUserId, userId: null, accountId: null, plan: null, db };
+  }
+
+  // Personal account context (no org selected, or orgs not enabled).
+  // With multi-account users (L2a), a user may have rows in multiple
+  // accounts. The personal account is the one with clerkOrgId IS NULL.
   const [row] = await db
     .select({
       userId: users.id,
@@ -99,7 +157,12 @@ export async function createContext(): Promise<Context> {
     })
     .from(users)
     .innerJoin(accounts, eq(users.accountId, accounts.id))
-    .where(eq(users.clerkUserId, clerkUserId))
+    .where(
+      and(
+        eq(users.clerkUserId, clerkUserId),
+        sql`${accounts.clerkOrgId} IS NULL`,
+      ),
+    )
     .limit(1);
 
   if (row) {
@@ -112,22 +175,13 @@ export async function createContext(): Promise<Context> {
     };
   }
 
-  // Lazy auto-provision: Clerk session is valid, but no DB row yet.
-  // In dev, the Clerk webhook can't reach localhost without a tunnel,
-  // so the webhook path never runs. In prod, there's a ~2s race
-  // between the post-signup redirect and the webhook delivery. Either
-  // way: provision now, so the user's first tRPC request succeeds
-  // instead of bouncing off "Account is being provisioned" retries.
-  // The webhook stays idempotent defense-in-depth in case of an OAuth
-  // flow that lands on a non-tRPC surface first.
+  // Lazy auto-provision for personal accounts.
   const user = await currentUser().catch(() => null);
   const email =
     user?.primaryEmailAddress?.emailAddress ??
     user?.emailAddresses?.[0]?.emailAddress;
 
   if (!email) {
-    // Can't provision without an email. Fall back to unauthenticated;
-    // the authed middleware will throw a nicer error to the client.
     return { clerkUserId, userId: null, accountId: null, plan: null, db };
   }
 
@@ -136,15 +190,11 @@ export async function createContext(): Promise<Context> {
     email,
   });
 
-  // Fire the activation funnel event exactly once. If the webhook
-  // races ahead of this path, its `created: true` fires it; this
-  // path fires it when WE won the race. Either way, captured once.
   if (provisioned.created) {
     identifyServer(clerkUserId, { email, plan: provisioned.plan });
     captureServer(clerkUserId, EVENTS.SIGNUP_COMPLETED, {
       plan: provisioned.plan,
     });
-    // Fire-and-forget flush; don't block the first page render.
     flushServer().catch(() => {
       /* best effort */
     });

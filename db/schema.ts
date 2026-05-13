@@ -144,6 +144,7 @@ export const accounts = pgTable(
     productBriefStructured: jsonb("product_brief_structured").$type<ProductBriefStructured>(),
     flagProductContextV1: boolean("flag_product_context_v1").notNull().default(false),
     flagProductContextV1Rotation: text("flag_product_context_v1_rotation").notNull().default("off"),
+    clerkOrgId: text("clerk_org_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -151,6 +152,9 @@ export const accounts = pgTable(
   (t) => [
     uniqueIndex("account_stripe_customer_idx").on(t.stripeCustomerId),
     uniqueIndex("account_stripe_subscription_idx").on(t.stripeSubscriptionId),
+    uniqueIndex("account_clerk_org_idx")
+      .on(t.clerkOrgId)
+      .where(sql`clerk_org_id IS NOT NULL`),
   ],
 );
 
@@ -177,7 +181,8 @@ export const users = pgTable(
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex("user_clerk_id_idx").on(t.clerkUserId),
+    uniqueIndex("user_clerk_account_idx").on(t.clerkUserId, t.accountId),
+    index("user_clerk_id_idx").on(t.clerkUserId),
     index("user_account_idx").on(t.accountId),
   ],
 );

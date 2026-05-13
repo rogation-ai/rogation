@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { accounts, users } from "@/db/schema";
 import type { PlanTier } from "@/lib/plans";
@@ -33,6 +33,13 @@ export interface ProvisionInput {
   email: string;
 }
 
+export interface ProvisionOrgInput {
+  clerkOrgId: string;
+  clerkUserId: string;
+  email: string;
+  orgName?: string;
+}
+
 export interface ProvisionedAccount {
   userId: string;
   accountId: string;
@@ -44,7 +51,9 @@ export interface ProvisionedAccount {
 export async function provisionAccountForClerkUser(
   input: ProvisionInput,
 ): Promise<ProvisionedAccount> {
-  // Dedup: if the Clerk user already has a row, return it.
+  // Dedup: if the Clerk user already has a personal account row, return it.
+  // With L2a multi-account users, filter to personal accounts only
+  // (clerkOrgId IS NULL) so org-linked rows don't satisfy this check.
   const [existing] = await db
     .select({
       userId: users.id,
@@ -53,7 +62,12 @@ export async function provisionAccountForClerkUser(
     })
     .from(users)
     .innerJoin(accounts, eq(users.accountId, accounts.id))
-    .where(eq(users.clerkUserId, input.clerkUserId))
+    .where(
+      and(
+        eq(users.clerkUserId, input.clerkUserId),
+        isNull(accounts.clerkOrgId),
+      ),
+    )
     .limit(1);
 
   if (existing) {
@@ -130,6 +144,140 @@ export async function provisionAccountForClerkUser(
           created: false,
         };
       }
+    }
+    throw err;
+  }
+}
+
+/**
+ * Provision an account for a Clerk Organization. Called when:
+ * 1. organization.created webhook fires (primary path)
+ * 2. Lazy fallback in createContext when orgId is set but no DB account exists
+ *
+ * Idempotent. Re-running for an already-provisioned org is a single SELECT.
+ */
+export async function provisionAccountForClerkOrg(
+  input: ProvisionOrgInput,
+): Promise<ProvisionedAccount> {
+  const [existing] = await db
+    .select({
+      accountId: accounts.id,
+      plan: accounts.plan,
+    })
+    .from(accounts)
+    .where(eq(accounts.clerkOrgId, input.clerkOrgId))
+    .limit(1);
+
+  if (existing) {
+    const userResult = await ensureUserInAccount(
+      existing.accountId,
+      input.clerkUserId,
+      input.email,
+    );
+    return {
+      userId: userResult.userId,
+      accountId: existing.accountId,
+      plan: existing.plan,
+      created: false,
+    };
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      const [account] = await tx
+        .insert(accounts)
+        .values({ plan: "free", clerkOrgId: input.clerkOrgId })
+        .returning({ id: accounts.id, plan: accounts.plan });
+
+      if (!account) throw new Error("Failed to create org account row");
+
+      const [user] = await tx
+        .insert(users)
+        .values({
+          accountId: account.id,
+          clerkUserId: input.clerkUserId,
+          email: input.email,
+        })
+        .returning({ id: users.id });
+
+      if (!user) throw new Error("Failed to create user row for org");
+
+      await tx
+        .update(accounts)
+        .set({ ownerUserId: user.id })
+        .where(eq(accounts.id, account.id));
+
+      return {
+        userId: user.id,
+        accountId: account.id,
+        plan: account.plan,
+        created: true,
+      };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      const [winner] = await db
+        .select({
+          accountId: accounts.id,
+          plan: accounts.plan,
+        })
+        .from(accounts)
+        .where(eq(accounts.clerkOrgId, input.clerkOrgId))
+        .limit(1);
+
+      if (winner) {
+        const userResult = await ensureUserInAccount(
+          winner.accountId,
+          input.clerkUserId,
+          input.email,
+        );
+        return {
+          userId: userResult.userId,
+          accountId: winner.accountId,
+          plan: winner.plan,
+          created: false,
+        };
+      }
+    }
+    throw err;
+  }
+}
+
+/**
+ * Add a user to an existing account if they don't already have a row.
+ * Called when a Clerk member joins an existing org.
+ */
+export async function ensureUserInAccount(
+  accountId: string,
+  clerkUserId: string,
+  email: string,
+): Promise<{ userId: string; created: boolean }> {
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.clerkUserId, clerkUserId), eq(users.accountId, accountId)))
+    .limit(1);
+
+  if (existing) {
+    return { userId: existing.id, created: false };
+  }
+
+  try {
+    const [user] = await db
+      .insert(users)
+      .values({ accountId, clerkUserId, email })
+      .returning({ id: users.id });
+
+    if (!user) throw new Error("Failed to create user row");
+    return { userId: user.id, created: true };
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      const [winner] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.clerkUserId, clerkUserId), eq(users.accountId, accountId)))
+        .limit(1);
+      if (winner) return { userId: winner.id, created: false };
     }
     throw err;
   }

@@ -1,7 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { verifyWebhook } from "@clerk/nextjs/webhooks";
 import { env } from "@/env";
-import { provisionAccountForClerkUser } from "@/lib/account/provision";
+import {
+  provisionAccountForClerkUser,
+  provisionAccountForClerkOrg,
+} from "@/lib/account/provision";
 import { EVENTS } from "@/lib/analytics/events";
 import {
   captureServer,
@@ -69,7 +72,51 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Ignore other event types for now. user.updated / user.deleted / session.*
-  // handlers land in follow-up commits.
+  if (evt.type === "organization.created") {
+    const orgData = evt.data as {
+      id?: string;
+      created_by?: string;
+      name?: string;
+    };
+    const clerkOrgId = orgData.id;
+    const createdBy = orgData.created_by;
+
+    if (!clerkOrgId || !createdBy) {
+      return NextResponse.json(
+        { error: "Missing org id or creator" },
+        { status: 400 },
+      );
+    }
+
+    const result = await provisionAccountForClerkOrg({
+      clerkOrgId,
+      clerkUserId: createdBy,
+      email: "", // org creator's email resolved via lazy fallback in createContext
+    });
+
+    return NextResponse.json({ ok: true, created: result.created });
+  }
+
+  if (evt.type === "organizationMembership.created") {
+    const memberData = evt.data as {
+      organization?: { id?: string };
+      public_user_data?: { user_id?: string; identifier?: string };
+    };
+    const clerkOrgId = memberData.organization?.id;
+    const clerkUserId = memberData.public_user_data?.user_id;
+    const email = memberData.public_user_data?.identifier ?? "";
+
+    if (!clerkOrgId || !clerkUserId) {
+      return NextResponse.json(
+        { error: "Missing org or user id" },
+        { status: 400 },
+      );
+    }
+
+    await provisionAccountForClerkOrg({ clerkOrgId, clerkUserId, email });
+
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ ok: true, ignored: evt.type });
 }

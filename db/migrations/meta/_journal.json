@@ -71,6 +71,20 @@
       "when": 1778600000000,
       "tag": "0009_nango_connectors",
       "breakpoints": false
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778700000000,
+      "tag": "0010_clerk_organizations",
+      "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1778700100000,
+      "tag": "0011_clerk_org_multi_account_user",
+      "breakpoints": false
     }
   ]
 }

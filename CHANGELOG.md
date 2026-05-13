@@ -4,6 +4,21 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.6.0] - 2026-05-13
+
+Multiple PMs can now share a Rogation workspace via Clerk Organizations.
+
+### Added
+- Clerk Organizations support with "Membership optional" mode. Existing personal accounts keep working unchanged.
+- Organization switcher in the sidebar. Create orgs, invite teammates, switch between personal and org context.
+- Org-aware account resolution: `createContext()` branches on `orgId` from Clerk's `auth()`. Org context resolves accounts by `clerkOrgId`, personal context uses the existing `clerkUserId` path.
+- `provisionAccountForClerkOrg()` and `ensureUserInAccount()` for org account creation and member join, with idempotent race handling.
+- Webhook handlers for `organization.created` and `organizationMembership.created` events.
+- Users can now belong to multiple accounts (personal + orgs) via `(clerk_user_id, account_id)` compound unique index.
+- TanStack Query cache resets on org switch so stale cross-org data never leaks.
+
+---
+
 ## [0.10.5.1] - 2026-05-12
 
 ### Fixed

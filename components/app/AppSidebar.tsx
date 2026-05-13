@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { OrganizationSwitcher, useOrganizationList } from "@clerk/nextjs";
 import { trpc } from "@/lib/trpc";
 import { bandFor, bandPct } from "@/components/ui/PlanMeter";
 import type { LimitValue, PlanTier } from "@/lib/plans";
@@ -48,7 +49,7 @@ export function AppSidebar(): React.JSX.Element {
         borderColor: "var(--color-border-subtle)",
       }}
     >
-      <div className="px-5 pt-5 pb-6">
+      <div className="px-5 pt-5 pb-4">
         <Link
           href="/app"
           className="text-base font-semibold tracking-tight"
@@ -57,6 +58,8 @@ export function AppSidebar(): React.JSX.Element {
           Rogation
         </Link>
       </div>
+
+      <SidebarOrgSwitcher />
 
       <nav className="flex flex-col gap-px px-2">
         {NAV.map((item) => (
@@ -75,6 +78,34 @@ export function AppSidebar(): React.JSX.Element {
         <SidebarPlanMeter />
       </div>
     </aside>
+  );
+}
+
+function SidebarOrgSwitcher(): React.JSX.Element | null {
+  const { isLoaded } = useOrganizationList();
+
+  if (!isLoaded) return null;
+
+  return (
+    <div
+      className="mx-3 mb-3 rounded border px-2 py-1.5"
+      style={{ borderColor: "var(--color-border-subtle)" }}
+    >
+      <OrganizationSwitcher
+        hidePersonal={false}
+        appearance={{
+          elements: {
+            rootBox: "w-full",
+            organizationSwitcherTrigger:
+              "w-full justify-between text-[13px] px-1 py-0.5 [&_span]:!text-[#FAFAFA] [&_svg]:!text-[#A8A8B0]",
+            organizationSwitcherPopoverCard:
+              "[&_span]:!text-[#0A0A0B] [&_p]:!text-[#6E6E76]",
+          },
+        }}
+        afterSelectOrganizationUrl="/app"
+        afterSelectPersonalUrl="/app"
+      />
+    </div>
   );
 }
 
