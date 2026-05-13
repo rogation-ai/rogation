@@ -128,6 +128,30 @@ export const vector = customType<{ data: number[]; driverData: string }>({
 
 /* -------------------------------- TABLES ------------------------------- */
 
+export const pmScopes = pgTable(
+  "pm_scope",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 128 }).notNull(),
+    brief: text("brief").notNull(),
+    briefEmbedding: vector("brief_embedding"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("pm_scope_account_idx").on(t.accountId, t.createdAt.desc()),
+  ],
+);
+
 export const accounts = pgTable(
   "account",
   {
@@ -206,6 +230,9 @@ export const evidence = pgTable(
     parseStatus: varchar("parse_status", { length: 32 })
       .notNull()
       .default("ready"),
+    scopeId: uuid("scope_id").references(() => pmScopes.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -221,6 +248,11 @@ export const evidence = pgTable(
       t.createdAt.desc(),
     ),
     index("evidence_account_hash_idx").on(t.accountId, t.contentHash),
+    index("evidence_account_scope_created_idx").on(
+      t.accountId,
+      t.scopeId,
+      t.createdAt.desc(),
+    ),
   ],
 );
 
@@ -271,6 +303,9 @@ export const insightClusters = pgTable(
     // depend on this row staying resolvable.
     tombstonedInto: uuid("tombstoned_into"),
     contextUsed: boolean("context_used"),
+    scopeId: uuid("scope_id").references(() => pmScopes.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -281,6 +316,11 @@ export const insightClusters = pgTable(
   (t) => [
     index("insight_cluster_account_updated_idx").on(
       t.accountId,
+      t.updatedAt.desc(),
+    ),
+    index("insight_cluster_account_scope_idx").on(
+      t.accountId,
+      t.scopeId,
       t.updatedAt.desc(),
     ),
   ],
@@ -333,6 +373,9 @@ export const insightRuns = pgTable(
     evidenceUsed: integer("evidence_used"),
     durationMs: integer("duration_ms"),
     error: text("error"),
+    scopeId: uuid("scope_id").references(() => pmScopes.id, {
+      onDelete: "set null",
+    }),
     startedAt: timestamp("started_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -372,6 +415,9 @@ export const opportunities = pgTable(
     // banner on /build.
     stale: boolean("stale").notNull().default(false),
     contextUsed: boolean("context_used"),
+    scopeId: uuid("scope_id").references(() => pmScopes.id, {
+      onDelete: "set null",
+    }),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -388,6 +434,11 @@ export const opportunities = pgTable(
     index("opportunity_account_updated_idx").on(
       t.accountId,
       t.updatedAt.desc(),
+    ),
+    index("opportunity_account_scope_idx").on(
+      t.accountId,
+      t.scopeId,
+      t.score.desc(),
     ),
   ],
 );
@@ -458,6 +509,9 @@ export const specs = pgTable(
     // /spec/[opportunityId].
     stale: boolean("stale").notNull().default(false),
     contextUsed: boolean("context_used"),
+    scopeId: uuid("scope_id").references(() => pmScopes.id, {
+      onDelete: "set null",
+    }),
     promptHash: varchar("prompt_hash", { length: 64 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -469,6 +523,11 @@ export const specs = pgTable(
   (t) => [
     index("spec_opportunity_version_idx").on(t.opportunityId, t.version.desc()),
     index("spec_account_updated_idx").on(t.accountId, t.updatedAt.desc()),
+    index("spec_account_scope_idx").on(
+      t.accountId,
+      t.scopeId,
+      t.updatedAt.desc(),
+    ),
   ],
 );
 
@@ -722,3 +781,5 @@ export type Outcome = typeof outcomes.$inferSelect;
 export type IntegrationCredential = typeof integrationCredentials.$inferSelect;
 export type LlmUsage = typeof llmUsage.$inferSelect;
 export type NewLlmUsage = typeof llmUsage.$inferInsert;
+export type PmScope = typeof pmScopes.$inferSelect;
+export type NewPmScope = typeof pmScopes.$inferInsert;
