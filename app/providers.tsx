@@ -82,25 +82,22 @@ function QueryCacheResetOnSignInChange({
 }: {
   queryClient: QueryClient;
 }) {
-  const { userId, isLoaded } = useAuth();
-  const lastUserIdRef = useRef<string | null | undefined>(undefined);
+  const { userId, orgId, isLoaded } = useAuth();
+  const lastKeyRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (!isLoaded) return;
-    const prev = lastUserIdRef.current;
-    // First settled read — just record and do nothing.
+    const key = `${userId ?? ""}:${orgId ?? ""}`;
+    const prev = lastKeyRef.current;
     if (prev === undefined) {
-      lastUserIdRef.current = userId ?? null;
+      lastKeyRef.current = key;
       return;
     }
-    // Actual transition: sign-out (userId → null), sign-in (null → id),
-    // or user swap (id-A → id-B). Clear the cache in every case so
-    // no response from the old session survives.
-    if (prev !== (userId ?? null)) {
+    if (prev !== key) {
       queryClient.clear();
-      lastUserIdRef.current = userId ?? null;
+      lastKeyRef.current = key;
     }
-  }, [isLoaded, userId, queryClient]);
+  }, [isLoaded, userId, orgId, queryClient]);
 
   return null;
 }
