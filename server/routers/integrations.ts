@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   integrationCredentials,
   integrationState,
+  users,
   type LinearIntegrationConfig,
   type NotionIntegrationConfig,
 } from "@/db/schema";
@@ -18,8 +19,13 @@ import {
   NotionApiError,
 } from "@/lib/integrations/notion/client";
 import { notionOauthConfigured } from "@/lib/integrations/notion/oauth";
+import {
+  nangoConfigured,
+  getNango,
+  createConnectSession,
+} from "@/lib/integrations/nango/client";
 import { pushSpecToNotion } from "@/lib/evidence/push-notion";
-import { canExport } from "@/lib/plans";
+import { canExport, canConnectProvider } from "@/lib/plans";
 import { checkLimit } from "@/lib/rate-limit";
 import { authedProcedure, router } from "@/server/trpc";
 
@@ -50,11 +56,41 @@ export const integrationsRouter = router({
     BEFORE rendering a "Connect X" button so we never show an action
     the user can't complete.
   */
-  providers: authedProcedure.query(async () => {
+  providers: authedProcedure.query(async ({ ctx }) => {
     return {
       linear: { configured: linearOauthConfigured() },
       notion: { configured: notionOauthConfigured() },
+      slack: {
+        configured: nangoConfigured(),
+        allowed: canConnectProvider("slack", ctx.plan),
+      },
+      hotjar: {
+        configured: nangoConfigured(),
+        allowed: canConnectProvider("hotjar", ctx.plan),
+      },
     };
+  }),
+
+  nangoConnectToken: authedProcedure.mutation(async ({ ctx }) => {
+    if (!nangoConfigured()) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Nango is not configured on this deployment.",
+      });
+    }
+
+    const [user] = await ctx.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, ctx.userId))
+      .limit(1);
+
+    const token = await createConnectSession({
+      id: ctx.accountId,
+      email: user?.email ?? "",
+      displayName: user?.email ?? "",
+    });
+    return { token };
   }),
 
   list: authedProcedure.query(async ({ ctx }) => {
@@ -75,11 +111,14 @@ export const integrationsRouter = router({
       .where(eq(integrationCredentials.accountId, ctx.accountId));
     const connected = new Set(credRows.map((r) => r.provider));
 
-    return rows.map((r) => ({
-      ...r,
-      connected: connected.has(r.provider),
-      config: isProviderConfig(r.config) ? r.config : null,
-    }));
+    return rows.map((r) => {
+      const config = isProviderConfig(r.config) ? r.config : null;
+      const isNangoProvider = r.provider === "slack" || r.provider === "hotjar";
+      const isConnected = isNangoProvider
+        ? !!(config as { nangoConnectionId?: string } | null)?.nangoConnectionId
+        : connected.has(r.provider);
+      return { ...r, connected: isConnected, config };
+    });
   }),
 
   linearTeams: authedProcedure.query(async ({ ctx }) => {
@@ -370,6 +409,186 @@ export const integrationsRouter = router({
         url: result.url,
         pageId: result.pageId,
       };
+    }),
+
+  slackChannels: authedProcedure.query(async ({ ctx }) => {
+    const nango = getNango();
+    if (!nango) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "Nango is not configured.",
+      });
+    }
+
+    const [state] = await ctx.db
+      .select({ config: integrationState.config })
+      .from(integrationState)
+      .where(
+        and(
+          eq(integrationState.accountId, ctx.accountId),
+          eq(integrationState.provider, "slack"),
+        ),
+      )
+      .limit(1);
+
+    const config = state?.config as { nangoConnectionId?: string; channels?: { id: string; name: string }[] } | null;
+    if (!config?.nangoConnectionId) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Slack is not connected.",
+      });
+    }
+
+    try {
+      const response = await nango.proxy({
+        method: "GET",
+        endpoint: "/conversations.list",
+        connectionId: config.nangoConnectionId,
+        providerConfigKey: "slack",
+        params: {
+          types: "public_channel",
+          exclude_archived: "true",
+          limit: "200",
+        },
+      });
+
+      const data = response.data as {
+        channels?: Array<{ id: string; name: string; num_members: number }>;
+      };
+
+      return {
+        channels: (data.channels ?? []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          memberCount: c.num_members,
+        })),
+        selectedChannels: config.channels ?? [],
+      };
+    } catch (err) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to fetch Slack channels.",
+      });
+    }
+  }),
+
+  setSlackChannels: authedProcedure
+    .input(
+      z.object({
+        channels: z.array(
+          z.object({ id: z.string(), name: z.string() }),
+        ).min(1).max(5),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [state] = await ctx.db
+        .select({ config: integrationState.config })
+        .from(integrationState)
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, "slack"),
+          ),
+        )
+        .limit(1);
+
+      const config = (state?.config ?? {}) as Record<string, unknown>;
+
+      await ctx.db
+        .update(integrationState)
+        .set({
+          config: { ...config, channels: input.channels },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, "slack"),
+          ),
+        );
+
+      return { ok: true };
+    }),
+
+  connectNango: authedProcedure
+    .input(
+      z.object({
+        provider: z.enum(["slack", "hotjar"]),
+        connectionId: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!canConnectProvider(input.provider, ctx.plan)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `${input.provider} requires a higher plan.`,
+          cause: { type: "plan_limit_reached", feature: `${input.provider}-connector` },
+        });
+      }
+
+      await ctx.db
+        .insert(integrationState)
+        .values({
+          accountId: ctx.accountId,
+          provider: input.provider,
+          status: "active",
+          config: { nangoConnectionId: input.connectionId },
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [integrationState.accountId, integrationState.provider],
+          set: {
+            status: "active",
+            config: { nangoConnectionId: input.connectionId },
+            lastError: null,
+            updatedAt: new Date(),
+          },
+        });
+
+      return { ok: true };
+    }),
+
+  disconnectNango: authedProcedure
+    .input(z.object({ provider: z.enum(["slack", "hotjar"]) }))
+    .mutation(async ({ ctx, input }) => {
+      const nango = getNango();
+      const [state] = await ctx.db
+        .select({ config: integrationState.config })
+        .from(integrationState)
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, input.provider),
+          ),
+        )
+        .limit(1);
+
+      const config = state?.config as { nangoConnectionId?: string } | null;
+      if (nango && config?.nangoConnectionId) {
+        try {
+          await nango.deleteConnection(input.provider, config.nangoConnectionId);
+        } catch {
+          // Nango connection may already be deleted; proceed with local cleanup
+        }
+      }
+
+      await ctx.db
+        .update(integrationState)
+        .set({
+          status: "disabled",
+          config: null,
+          lastError: null,
+          cursor: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(integrationState.accountId, ctx.accountId),
+            eq(integrationState.provider, input.provider),
+          ),
+        );
+
+      return { ok: true };
     }),
 
   disconnect: authedProcedure

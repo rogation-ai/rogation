@@ -417,3 +417,21 @@ Second integration target (after Linear). Same pattern: OAuth → encrypted toke
 - Vercel env vars: all 11 required keys set in the Vercel dashboard (confirmed 2026-04-20)
 - First production deploy: pending PR #3 merge (prior attempts failed the Vercel "vulnerable Next.js" guard — fixed by the 15.1.0 → 15.5.15 bump in PR #3)
 - After PR #3 merges, verify the assigned production URL with `vercel ls` and update this section if Vercel assigns a different alias than the expected `rogation-sanxores-projects.vercel.app`
+
+## Skill routing
+
+When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+
+Key routing rules:
+- Product ideas/brainstorming → invoke /office-hours
+- Strategy/scope → invoke /plan-ceo-review
+- Architecture → invoke /plan-eng-review
+- Design system/plan review → invoke /design-consultation or /plan-design-review
+- Full review pipeline → invoke /autoplan
+- Bugs/errors → invoke /investigate
+- QA/testing site behavior → invoke /qa or /qa-only
+- Code review/diff check → invoke /review
+- Visual polish → invoke /design-review
+- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Save progress → invoke /context-save
+- Resume context → invoke /context-restore

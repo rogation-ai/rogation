@@ -165,6 +165,14 @@ export const env = createEnv({
     */
     INNGEST_EVENT_KEY: z.string().min(1).optional(),
     INNGEST_SIGNING_KEY: z.string().min(1).optional(),
+
+    /*
+      Nango manages OAuth flows, token refresh, and sync scheduling for
+      third-party connectors (Slack, Hotjar, etc.). Same pattern as Clerk
+      for auth and Stripe for billing — managed service for commodity
+      plumbing. Secret key authenticates server-side API calls.
+    */
+    NANGO_SECRET_KEY: z.string().min(1).optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
@@ -214,6 +222,7 @@ export const env = createEnv({
     NOTION_CLIENT_SECRET: process.env.NOTION_CLIENT_SECRET,
     INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY,
     INNGEST_SIGNING_KEY: process.env.INNGEST_SIGNING_KEY,
+    NANGO_SECRET_KEY: process.env.NANGO_SECRET_KEY,
     NEXT_PUBLIC_APP_URL: resolveAppUrl(),
     NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,

@@ -802,7 +802,7 @@ interface LinearPushBlockProps {
   };
   plan: "free" | "solo" | "pro";
   integrations: Array<{
-    provider: "zendesk" | "posthog" | "canny" | "linear" | "notion";
+    provider: "zendesk" | "posthog" | "canny" | "linear" | "notion" | "slack" | "hotjar";
     connected: boolean;
     status: "active" | "token_invalid" | "rate_limited" | "disabled";
     config: Record<string, unknown> | null;
@@ -934,7 +934,7 @@ function LinearPushBlock({
 interface NotionPushBlockProps {
   plan: "free" | "solo" | "pro";
   integrations: Array<{
-    provider: "zendesk" | "posthog" | "canny" | "linear" | "notion";
+    provider: "zendesk" | "posthog" | "canny" | "linear" | "notion" | "slack" | "hotjar";
     connected: boolean;
     status: "active" | "token_invalid" | "rate_limited" | "disabled";
     config: Record<string, unknown> | null;
