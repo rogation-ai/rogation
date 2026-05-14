@@ -21,6 +21,9 @@ export default function ScopesPage(): React.JSX.Element {
     onSuccess: () => utils.scopes.list.invalidate(),
   });
   const previewMutation = trpc.scopes.preview.useMutation();
+  const rerouteMutation = trpc.scopes.reroute.useMutation({
+    onSuccess: () => utils.scopes.list.invalidate(),
+  });
 
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
@@ -72,15 +75,41 @@ export default function ScopesPage(): React.JSX.Element {
           </p>
         </div>
         {!showCreate && (
-          <button
-            onClick={() => setShowCreate(true)}
-            className="rounded px-3 py-1.5 text-sm font-medium text-white"
-            style={{ background: "var(--color-brand-accent)" }}
-          >
-            New scope
-          </button>
+          <div className="flex items-center gap-2">
+            {scopes && scopes.length > 0 && (
+              <button
+                onClick={() => rerouteMutation.mutate()}
+                disabled={rerouteMutation.isPending}
+                className="rounded border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+                style={{
+                  borderColor: "var(--color-border-subtle)",
+                  color: "var(--color-text-secondary)",
+                }}
+                title="Re-run scope routing for all evidence on this account."
+              >
+                {rerouteMutation.isPending ? "Re-routing…" : "Re-route now"}
+              </button>
+            )}
+            <button
+              onClick={() => setShowCreate(true)}
+              className="rounded px-3 py-1.5 text-sm font-medium text-white"
+              style={{ background: "var(--color-brand-accent)" }}
+            >
+              New scope
+            </button>
+          </div>
         )}
       </div>
+      {rerouteMutation.data && !rerouteMutation.isPending && (
+        <p
+          className="text-xs mb-4 -mt-3"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          Re-routed: {rerouteMutation.data.routed} attached,{" "}
+          {rerouteMutation.data.unscoped} unscoped of{" "}
+          {rerouteMutation.data.total} total.
+        </p>
+      )}
 
       {showCreate && (
         <div
@@ -284,6 +313,16 @@ export default function ScopesPage(): React.JSX.Element {
                   >
                     {scope.evidenceCount} evidence
                   </span>
+                  {scope.evidenceCount === 0 && (
+                    <p
+                      className="text-xs mt-2 max-w-md"
+                      style={{ color: "var(--color-text-tertiary)" }}
+                    >
+                      No evidence routed yet. The brief needs to overlap
+                      closely with evidence wording. Try widening the
+                      brief, or use Re-route after adding new evidence.
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button

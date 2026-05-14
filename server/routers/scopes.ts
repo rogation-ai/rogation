@@ -8,6 +8,7 @@ import {
   scopeCount,
   updateScope,
 } from "@/lib/evidence/scopes";
+import { routeAllEvidence } from "@/lib/evidence/scope-routing";
 import { authedProcedure, router } from "@/server/trpc";
 
 export const scopesRouter = router({
@@ -93,4 +94,12 @@ export const scopesRouter = router({
         input.brief,
       );
     }),
+
+  // Manual re-route: useful when the user adds new evidence after
+  // creating a scope, or after lowering the routing threshold. The
+  // automatic routes happen on createScope / updateScope (when the
+  // brief changes); this is the "do it now" escape hatch.
+  reroute: authedProcedure.mutation(async ({ ctx }) => {
+    return routeAllEvidence(ctx.db, ctx.accountId);
+  }),
 });
