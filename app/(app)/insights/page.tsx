@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
+import { useScopeFilter } from "@/lib/client/use-scope-filter";
 import { SeverityPill } from "@/components/ui/SeverityPill";
 import { StaleBanner } from "@/components/ui/StaleBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -44,8 +45,9 @@ const POLL_INTERVAL_MS = 1500;
 const STUCK_TIMEOUT_MS = 5 * 60 * 1000;
 
 function InsightsPageInner(): React.JSX.Element {
+  const scopeId = useScopeFilter();
   const evCount = trpc.evidence.count.useQuery();
-  const list = trpc.insights.list.useQuery();
+  const list = trpc.insights.list.useQuery({ scopeId });
   const utils = trpc.useUtils();
 
   // Tracks the in-flight re-cluster id. Seeded from `latestRun` on
@@ -55,6 +57,13 @@ function InsightsPageInner(): React.JSX.Element {
   const [stuckRun, setStuckRun] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const searchParams = useSearchParams();
+
+  // Switching scopes can leave selectedId pointing at a cluster that
+  // isn't in the new scope's list. Reset so the auto-select effect
+  // below picks the new top cluster instead of 404ing the detail query.
+  useEffect(() => {
+    setSelectedId(null);
+  }, [scopeId]);
 
   // Resume polling after a page reload if the latest run is still in flight.
   // One-shot: only seeds when we have no activeRunId yet.
@@ -87,6 +96,16 @@ function InsightsPageInner(): React.JSX.Element {
       setStuckRun(false);
     },
   });
+
+  // The router accepts a uuid only — see server/routers/insights.ts:95.
+  // When the global filter is "unscoped" we collapse to undefined,
+  // which means the worker re-clusters every scope. The dispatch row
+  // also dedups against `scope_id IS NULL`, so an "All" run and an
+  // "Unscoped" run share a bucket. Both are pre-existing surprises;
+  // proper fix is to extend the run input + orchestrator to accept
+  // the "unscoped" literal as a first-class re-cluster target.
+  const runScopeId =
+    scopeId && scopeId !== "unscoped" ? scopeId : undefined;
 
   const cancelStuck = trpc.insights.cancelStuckRun.useMutation({
     onSuccess: ({ cancelled }) => {
@@ -213,7 +232,9 @@ function InsightsPageInner(): React.JSX.Element {
           <StaleBanner
             message={`Clusters get sharper around ${THIN_CORPUS_THRESHOLD}+ pieces. You have ${count}. ${runError ?? ""}`}
             actionLabel={count >= 1 ? "Run anyway" : "Upload more"}
-            onAction={() => (count >= 1 ? run.mutate() : undefined)}
+            onAction={() =>
+              count >= 1 ? run.mutate({ scopeId: runScopeId }) : undefined
+            }
             isRunning={isRunning}
           />
         )}
@@ -224,7 +245,7 @@ function InsightsPageInner(): React.JSX.Element {
             </p>
             <button
               type="button"
-              onClick={() => run.mutate()}
+              onClick={() => run.mutate({ scopeId: runScopeId })}
               disabled={isRunning || run.isPending}
               className="rounded-md px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
               style={{ background: "var(--color-brand-accent)" }}
@@ -289,7 +310,7 @@ function InsightsPageInner(): React.JSX.Element {
 
         <button
           type="button"
-          onClick={() => run.mutate()}
+          onClick={() => run.mutate({ scopeId: runScopeId })}
           disabled={isRunning || run.isPending}
           className="mt-4 text-xs underline-offset-2 hover:underline disabled:opacity-60"
           style={{ color: "var(--color-text-secondary)" }}

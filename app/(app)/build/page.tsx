@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { ConfidenceBadge } from "@/components/ui/ConfidenceBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -9,6 +9,7 @@ import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
 import { StaleBanner } from "@/components/ui/StaleBanner";
 import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
+import { useScopeFilter } from "@/lib/client/use-scope-filter";
 
 /*
   What to build — ranked opportunities + five weight sliders with
@@ -74,7 +75,16 @@ const EFFORT_WEIGHT: Record<string, number> = {
 };
 
 export default function BuildPage(): React.JSX.Element {
-  const list = trpc.opportunities.list.useQuery();
+  return (
+    <Suspense fallback={<SkeletonList count={5} />}>
+      <BuildPageInner />
+    </Suspense>
+  );
+}
+
+function BuildPageInner(): React.JSX.Element {
+  const scopeId = useScopeFilter();
+  const list = trpc.opportunities.list.useQuery({ scopeId });
   const weightsQ = trpc.opportunities.weights.useQuery();
   const utils = trpc.useUtils();
   const run = trpc.opportunities.run.useMutation({

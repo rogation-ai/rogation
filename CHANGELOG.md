@@ -4,7 +4,7 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
-## [0.10.8.0] - 2026-05-14
+## [0.10.9.0] - 2026-05-14
 
 PMs can now dismiss irrelevant clusters. Dismissed evidence is permanently excluded from future clustering runs, and a centroid-based matching layer flags new incoming evidence that resembles dismissed patterns for review. PMs manage exclusions from Settings > Learning.
 
@@ -25,6 +25,25 @@ PMs can now dismiss irrelevant clusters. Dismissed evidence is permanently exclu
 - 16 new test cases across 2 test files (8 pure + 8 DB-gated).
 
 ---
+
+## [0.10.8.0] - 2026-05-14
+
+Scope filtering now actually filters. The selector that shipped with v0.10.7.0 was writing `?scope=<id>` to the URL but no consumer page was reading it — so changing the dropdown did nothing. This release wires it end-to-end and tightens the routing threshold so realistic PM briefs actually route evidence.
+
+### Fixed
+
+- **Scope filtering on /evidence, /insights, and /build** now responds to the global scope dropdown. New shared `useScopeFilter` hook normalises the URL param (uuid / "unscoped" / undefined) and threads it into every consumer query. Garbage URL input (`?scope=garbage`) is silently coerced to no-filter instead of 500-ing the page.
+- **Scope routing threshold** lowered from 0.70 to 0.55. The previous floor was too tight for `text-embedding-3-small`; realistic briefs ("iOS Safari, mobile checkout, scroll jank") routed 0 of 13 sample-corpus rows. 0.55 lets same-domain evidence in while still rejecting orthogonal noise.
+- **`scopes.reroute` data-loss guard.** If every scope's brief embedding lagged, `routeAllEvidence` previously NULLed `scope_id` on every evidence row in the account. One click of the new "Re-route" button could erase the entire scope graph. Bails out instead and reports the unscoped count.
+- **`scopes.reroute` rate limit + error mapping.** New `scope-reroute` preset (10/hour/account) prevents mash-clicking from holding long transactions and contending with concurrent ingest writes. Try/catch with TRPCError mapping matches every other mutation in the router.
+- **Stale cluster selection on /insights.** Switching scope no longer leaves the previous scope's cluster id selected (which 404'd the detail query).
+
+### Added
+
+- **"Re-route all evidence" action** in a new kebab menu on /settings/scopes. Useful when adding new evidence after creating a scope, or after a threshold change. Demoted from a header CTA to a dropdown item so it doesn't compete with the primary "New scope" flow.
+- **Empty-state hint** on scope cards with 0 attached evidence: "No matches yet — try widening the brief."
+- **`scopes.reroute` tRPC mutation** wrapping the existing `routeAllEvidence` helper.
+- **Regression tests** covering the URL → query normaliser (7 cases including injection-shaped input) and the previously-failing 0.55-0.70 threshold band.
 
 ## [0.10.7.0] - 2026-05-13
 
