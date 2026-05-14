@@ -8,9 +8,13 @@
   Dismissible so returning users can scroll past it until they're
   ready to re-cluster. The refresh button is the primary action.
 
-  Today this component is wired with a simple prop-driven visibility.
-  The incremental-clustering commit drives `visible` off a real stale
-  flag on insight_cluster rows.
+  Tones (added by /autoplan design review):
+    - "warn" (default): the original warning posture for cluster
+      staleness and partial-failure surfaces.
+    - "info": neutral informational banner. Used by the spec page's
+      "refinement gap" surface — telling the PM that their refined
+      spec hasn't been pushed yet and links to the prior project.
+      Same shape, softer visual weight.
 */
 
 export interface StaleBannerProps {
@@ -22,6 +26,12 @@ export interface StaleBannerProps {
   onDismiss?: () => void;
   /** Whether the action is running — disables the button + shows a spinner label. */
   isRunning?: boolean;
+  /**
+   * Visual tone. Defaults to "warn" for backward compatibility.
+   * "info" softens the action color to text-secondary so the banner
+   * reads as informational, not interruptive.
+   */
+  tone?: "warn" | "info";
 }
 
 export function StaleBanner({
@@ -30,6 +40,7 @@ export function StaleBanner({
   onAction,
   onDismiss,
   isRunning,
+  tone = "warn",
 }: StaleBannerProps): React.JSX.Element {
   return (
     <div
@@ -49,7 +60,12 @@ export function StaleBanner({
           onClick={onAction}
           disabled={isRunning}
           className="font-medium underline-offset-2 hover:underline disabled:opacity-60"
-          style={{ color: "var(--color-brand-accent)" }}
+          style={{
+            color:
+              tone === "info"
+                ? "var(--color-text-secondary)"
+                : "var(--color-brand-accent)",
+          }}
         >
           {isRunning ? "Refreshing…" : actionLabel}
         </button>

@@ -39,3 +39,12 @@ export const Dismissible: Story = {
     onDismiss: () => {},
   },
 };
+
+export const InfoTone: Story = {
+  args: {
+    message:
+      "This refined spec hasn't been pushed. Your previous Linear project will stay untouched.",
+    actionLabel: "View previous",
+    tone: "info",
+  },
+};
