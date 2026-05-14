@@ -58,8 +58,8 @@ export default function ScopesPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="min-w-0 flex-1">
           <h1
             className="text-lg font-semibold"
             style={{ color: "var(--color-text-primary)" }}
@@ -73,26 +73,36 @@ export default function ScopesPage(): React.JSX.Element {
             Group evidence by domain. Evidence is routed to scopes by
             similarity to the scope brief.
           </p>
+          {rerouteMutation.data && !rerouteMutation.isPending && (
+            <p
+              className="text-xs mt-2"
+              style={{ color: "var(--color-success)" }}
+            >
+              Re-routed: {rerouteMutation.data.routed} attached,{" "}
+              {rerouteMutation.data.unscoped} unscoped of{" "}
+              {rerouteMutation.data.total} total.
+            </p>
+          )}
         </div>
         {!showCreate && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {scopes && scopes.length > 0 && (
               <button
                 onClick={() => rerouteMutation.mutate()}
                 disabled={rerouteMutation.isPending}
-                className="rounded border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+                className="whitespace-nowrap rounded border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
                 style={{
                   borderColor: "var(--color-border-subtle)",
                   color: "var(--color-text-secondary)",
                 }}
                 title="Re-run scope routing for all evidence on this account."
               >
-                {rerouteMutation.isPending ? "Re-routing…" : "Re-route now"}
+                {rerouteMutation.isPending ? "Re-routing…" : "Re-route"}
               </button>
             )}
             <button
               onClick={() => setShowCreate(true)}
-              className="rounded px-3 py-1.5 text-sm font-medium text-white"
+              className="whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium text-white"
               style={{ background: "var(--color-brand-accent)" }}
             >
               New scope
@@ -100,16 +110,6 @@ export default function ScopesPage(): React.JSX.Element {
           </div>
         )}
       </div>
-      {rerouteMutation.data && !rerouteMutation.isPending && (
-        <p
-          className="text-xs mb-4 -mt-3"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          Re-routed: {rerouteMutation.data.routed} attached,{" "}
-          {rerouteMutation.data.unscoped} unscoped of{" "}
-          {rerouteMutation.data.total} total.
-        </p>
-      )}
 
       {showCreate && (
         <div
@@ -315,12 +315,10 @@ export default function ScopesPage(): React.JSX.Element {
                   </span>
                   {scope.evidenceCount === 0 && (
                     <p
-                      className="text-xs mt-2 max-w-md"
+                      className="text-[13px] mt-2 max-w-md leading-snug"
                       style={{ color: "var(--color-text-tertiary)" }}
                     >
-                      No evidence routed yet. The brief needs to overlap
-                      closely with evidence wording. Try widening the
-                      brief, or use Re-route after adding new evidence.
+                      No matches yet — try widening the brief.
                     </p>
                   )}
                 </div>
