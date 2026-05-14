@@ -48,7 +48,9 @@ function IntegrationsSettingsInner(): React.JSX.Element {
           ? "Linear integration isn't set up on this deployment yet. Contact support."
           : reason === "unauthorized"
             ? "Sign in first, then try again."
-            : "Couldn't finish connecting Linear. Try again.";
+            : reason === "insufficient_scope"
+              ? "Linear didn't grant write access. Check that the OAuth app has read + write scopes enabled in its settings, then reconnect."
+              : "Couldn't finish connecting Linear. Try again.";
       setBanner({ kind: "error", text });
     } else if (notionParam === "connected") {
       setBanner({
