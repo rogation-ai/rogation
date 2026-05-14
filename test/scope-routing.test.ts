@@ -3,8 +3,10 @@ import { cosineSim } from "@/lib/evidence/clustering/knn";
 import { SCOPE_THRESHOLD, MULTI_SCOPE_MARGIN } from "@/lib/evidence/scope-routing";
 
 describe("scope routing thresholds", () => {
-  it("threshold is 0.70", () => {
-    expect(SCOPE_THRESHOLD).toBe(0.7);
+  it("threshold is 0.55", () => {
+    // 0.7 was too tight for text-embedding-3-small: realistic PM briefs
+    // routed 0 of 13 pieces even when brief and evidence shared tokens.
+    expect(SCOPE_THRESHOLD).toBe(0.55);
   });
 
   it("multi-scope margin is 0.05", () => {
@@ -19,10 +21,21 @@ describe("scope routing thresholds", () => {
   });
 
   it("evidence with sim < threshold stays unscoped", () => {
+    // Orthogonal vectors score ~0; far below the 0.55 floor.
     const a = [1, 0, 0];
     const b = [0, 1, 0];
     const sim = cosineSim(a, b);
     expect(sim).toBeLessThan(SCOPE_THRESHOLD);
+  });
+
+  it("loosely-related vectors (sim ~0.6) clear the new floor but not the old one", () => {
+    // Regression for ISSUE-002: this exact case used to score below
+    // 0.7 and route to "unscoped". With 0.55 it correctly attaches.
+    const a = [1, 0, 0];
+    const b = [0.6, 0.8, 0];
+    const sim = cosineSim(a, b);
+    expect(sim).toBeGreaterThan(SCOPE_THRESHOLD);
+    expect(sim).toBeLessThan(0.7);
   });
 
   it("orthogonal vectors score near zero", () => {

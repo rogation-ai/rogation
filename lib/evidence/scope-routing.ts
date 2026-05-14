@@ -3,7 +3,13 @@ import { evidence, evidenceEmbeddings, pmScopes } from "@/db/schema";
 import type { Tx } from "@/db/scoped";
 import { cosineSim } from "@/lib/evidence/clustering/knn";
 
-export const SCOPE_THRESHOLD = 0.7;
+// Cosine similarity floor for attaching evidence to a scope.
+// Earlier value 0.7 was too tight for text-embedding-3-small: realistic
+// PM briefs ("iOS Safari, mobile checkout, scroll jank") routed 0 of 13
+// pieces in the test corpus even when the brief named tokens that
+// appeared in the evidence. 0.55 still rejects orthogonal noise (random
+// text scores ~0.1-0.3) while letting same-domain evidence in.
+export const SCOPE_THRESHOLD = 0.55;
 export const MULTI_SCOPE_MARGIN = 0.05;
 
 export interface ScopeRouteResult {
