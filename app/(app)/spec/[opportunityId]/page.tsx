@@ -7,6 +7,7 @@ import { trpc } from "@/lib/trpc";
 import { OutcomeCard } from "@/components/ui/OutcomeCard";
 import { ReadinessGrade } from "@/components/ui/ReadinessGrade";
 import { StaleBanner } from "@/components/ui/StaleBanner";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { CitationChip } from "@/components/ui/CitationChip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FeedbackThumbs } from "@/components/ui/FeedbackThumbs";
@@ -16,6 +17,10 @@ import { capture } from "@/lib/analytics/posthog-client";
 import { canExport } from "@/lib/plans";
 import { EVENTS } from "@/lib/analytics/events";
 import { sseFetch } from "@/lib/client/sse-fetch";
+import {
+  extractLinearConflictFromError,
+  pickLinearPushState,
+} from "@/lib/client/linear-push-state";
 import { useFeedbackThumbs } from "@/lib/client/use-feedback-thumbs";
 import type { SpecIR } from "@/lib/spec/ir";
 
@@ -56,23 +61,89 @@ export default function SpecEditorPage({
   const latest = trpc.specs.getLatest.useQuery({ opportunityId });
   const me = trpc.account.me.useQuery();
   const integrationsList = trpc.integrations.list.useQuery();
+  // Only fetch the prior-project lookup when the current spec hasn't
+  // been pushed yet. If linearProjectUrl is set, the "Already pushed"
+  // state takes precedence and this query result would be unused.
+  const priorLinear = trpc.specs.priorLinearProject.useQuery(
+    { opportunityId },
+    { enabled: latest.data?.linearProjectUrl == null },
+  );
+
+  // D3 confirm-modal state. When the server returns
+  // CONFLICT(linear-project-exists[-but-empty]), we open the modal
+  // with the conflict envelope so the PM picks update vs create-new.
+  const [linearConflict, setLinearConflict] = useState<{
+    kind: "linear-project-exists" | "linear-project-exists-but-empty";
+    projectId: string;
+    projectUrl: string;
+    issueCount: number;
+  } | null>(null);
+
+  // recreatedAfterDelete inline note dismiss state. Keyed by
+  // linearProjectId so the PM doesn't re-see it for the same project
+  // across page reloads. Persisted in localStorage per design doc §6.6.
+  const RECREATED_DISMISS_KEY = "rogation:linear-recreated-dismissed";
+  const [recreatedDismissedIds, setRecreatedDismissedIds] = useState<
+    Set<string>
+  >(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(RECREATED_DISMISS_KEY);
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const [recreatedFlag, setRecreatedFlag] = useState<string | null>(null);
+
+  function dismissRecreatedNote(projectId: string): void {
+    setRecreatedDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.add(projectId);
+      try {
+        window.localStorage.setItem(
+          RECREATED_DISMISS_KEY,
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {
+        // localStorage quota exceeded or disabled — note re-shows on
+        // next reload. Acceptable degradation.
+      }
+      return next;
+    });
+  }
+
   const pushLinear = trpc.specs.pushToLinear.useMutation({
     onSuccess: (result) => {
       utils.specs.getLatest.invalidate({ opportunityId });
-      // Tell the user the push landed. Without this, the UI used to
-      // silently succeed/fail — the 500 path surfaced nothing at all.
+      utils.specs.priorLinearProject.invalidate({ opportunityId });
+      setLinearConflict(null);
+      if (result.recreatedAfterDelete) {
+        setRecreatedFlag(result.projectId);
+      }
       toast.success("Pushed to Linear", {
-        description: result.identifier
-          ? `Created ${result.identifier}. Opens in Linear.`
-          : "Issue created in your Linear workspace.",
-        action: result.url
-          ? { label: "View", onClick: () => window.open(result.url, "_blank") }
+        description:
+          result.issueCount === 1
+            ? "Project created with 1 issue."
+            : `Project created with ${result.issueCount} issues.`,
+        action: result.projectUrl
+          ? {
+              label: "View",
+              onClick: () =>
+                window.open(result.projectUrl, "_blank", "noopener,noreferrer"),
+            }
           : undefined,
       });
     },
     onError: (err) => {
-      // The silent-500 path. Surface the real server message so users
-      // know whether to retry, reconnect, or contact support.
+      // CONFLICT with the project-exists shape: open the D3 modal
+      // instead of showing a generic error toast. The narrowing logic
+      // lives in lib/client/linear-push-state for testability.
+      const conflict = extractLinearConflictFromError(err);
+      if (conflict !== null) {
+        setLinearConflict(conflict);
+        return;
+      }
       toast.error("Couldn't push to Linear", {
         description: err.message,
       });
@@ -84,7 +155,11 @@ export default function SpecEditorPage({
       toast.success("Pushed to Notion", {
         description: "Page created in your Rogation Specs database.",
         action: result.url
-          ? { label: "Open", onClick: () => window.open(result.url, "_blank") }
+          ? {
+              label: "Open",
+              onClick: () =>
+                window.open(result.url, "_blank", "noopener,noreferrer"),
+            }
           : undefined,
       });
     },
@@ -221,6 +296,76 @@ export default function SpecEditorPage({
 
   return (
     <div className="grid grid-cols-[1fr_320px] gap-8">
+      {linearConflict !== null && (
+        <ConfirmDialog
+          open={true}
+          title={
+            linearConflict.kind === "linear-project-exists-but-empty"
+              ? "Continue the first push?"
+              : "This spec is already a Linear project"
+          }
+          body={
+            linearConflict.kind === "linear-project-exists-but-empty" ? (
+              <>
+                A prior push created the project but no issues were created
+                yet. Continue and create the issues now?
+              </>
+            ) : (
+              <>
+                This project has{" "}
+                <strong>
+                  {linearConflict.issueCount}{" "}
+                  {linearConflict.issueCount === 1 ? "issue" : "issues"}
+                </strong>
+                . What should we do?
+              </>
+            )
+          }
+          primaryAction={
+            linearConflict.kind === "linear-project-exists-but-empty"
+              ? {
+                  label: "Continue first push",
+                  onClick: () =>
+                    pushLinear.mutate({
+                      opportunityId,
+                      mode: "update-in-place",
+                    }),
+                  subtext:
+                    "Issues will be created in the existing empty project.",
+                  disabled: pushLinear.isPending,
+                }
+              : {
+                  label: "Update existing project",
+                  onClick: () =>
+                    pushLinear.mutate({
+                      opportunityId,
+                      mode: "update-in-place",
+                    }),
+                  subtext:
+                    "Removed stories will be archived. Assignees are not notified.",
+                  disabled: pushLinear.isPending,
+                }
+          }
+          secondaryAction={
+            linearConflict.kind === "linear-project-exists-but-empty"
+              ? undefined
+              : {
+                  label: "Create new project",
+                  onClick: () =>
+                    pushLinear.mutate({
+                      opportunityId,
+                      mode: "create-new",
+                    }),
+                  subtext: "The existing project stays in Linear untouched.",
+                  disabled: pushLinear.isPending,
+                }
+          }
+          onCancel={() => setLinearConflict(null)}
+          inFlight={
+            pushLinear.isPending ? { label: "Updating project" } : undefined
+          }
+        />
+      )}
       <section className="flex flex-col gap-4">
         <Link
           href="/build"
@@ -339,7 +484,18 @@ export default function SpecEditorPage({
                 integrations={integrationsList.data ?? []}
                 isPushing={pushLinear.isPending}
                 pushError={pushLinear.error?.message ?? null}
-                onPush={() => pushLinear.mutate({ opportunityId })}
+                priorProject={priorLinear.data ?? null}
+                showRecreatedNote={
+                  recreatedFlag !== null &&
+                  !recreatedDismissedIds.has(recreatedFlag)
+                }
+                onDismissRecreatedNote={() => {
+                  if (recreatedFlag !== null)
+                    dismissRecreatedNote(recreatedFlag);
+                }}
+                onPush={() =>
+                  pushLinear.mutate({ opportunityId, mode: undefined })
+                }
               />
               <NotionPushBlock
                 plan={me.data?.account.plan ?? "free"}
@@ -797,8 +953,13 @@ function Section({
 
 interface LinearPushBlockProps {
   spec: {
-    linearIssueUrl: string | null;
-    linearIssueIdentifier: string | null;
+    ir: SpecIR;
+    linearProjectUrl: string | null;
+    linearProjectId: string | null;
+    linearIssueMap: Record<
+      string,
+      { id: string; identifier: string; url: string }
+    > | null;
   };
   plan: "free" | "solo" | "pro";
   integrations: Array<{
@@ -809,22 +970,45 @@ interface LinearPushBlockProps {
   }>;
   isPushing: boolean;
   pushError: string | null;
+  /**
+   * Latest prior version of this spec that did push to Linear. Drives
+   * the refinement-gap banner: when a refined spec has no
+   * linearProjectId but a prior version did, show a banner linking
+   * back to the prior project.
+   */
+  priorProject: { projectId: string; projectUrl: string } | null;
+  /** Whether to show the recreatedAfterDelete inline note. */
+  showRecreatedNote: boolean;
+  onDismissRecreatedNote: () => void;
   onPush: () => void;
 }
 
 /*
-  Push-to-Linear CTA block. Picks one of five mutually exclusive
-  states, in order:
+  Push-to-Linear CTA block. States, in priority order:
 
-    1. Already pushed      → "View in Linear →" link (keep URL + id).
-    2. Plan doesn't allow  → Upgrade CTA to /pricing.
-    3. Not connected       → "Connect Linear first →" link.
-    4. No default team     → "Pick a team →" link.
-    5. Ready to push       → solid "Push to Linear" button.
+    1. Already pushed                → two-row layout: full-row deep
+                                       link to the project + outlined
+                                       "Update from latest spec" CTA.
+                                       Plus optional partial-success
+                                       StaleBanner above if the issue
+                                       map is incomplete.
+    2. Refinement-gap (prior version
+       had a project; this version
+       doesn't)                      → StaleBanner tone=info linking
+                                       to prior project + push CTA
+                                       demoted to outlined neutral.
+    3. Plan doesn't allow            → Upgrade CTA to /pricing.
+    4. Not connected                 → "Connect Linear first →" link.
+    5. No default team               → "Pick a team →" link.
+    6. Ready to push (first push)    → solid brand-accent button.
 
-  Error messages from the mutation surface inline below the button
-  so the user sees precisely why it failed (rate limit, token
-  revoked, etc.) without hunting through the network tab.
+  Error messages surface inline below the CTA so users see precisely
+  why it failed (rate limit, token revoked, etc.) without hunting
+  through the network tab.
+
+  Accessibility:
+    - The recreatedAfterDelete note uses role="status" (informational,
+      not interruptive). ConfirmDialog handles its own a11y.
 */
 function LinearPushBlock({
   spec,
@@ -832,26 +1016,108 @@ function LinearPushBlock({
   integrations,
   isPushing,
   pushError,
+  priorProject,
+  showRecreatedNote,
+  onDismissRecreatedNote,
   onPush,
 }: LinearPushBlockProps): React.JSX.Element {
-  if (spec.linearIssueUrl) {
+  const linear = integrations.find((i) => i.provider === "linear");
+  const state = pickLinearPushState({
+    spec,
+    plan,
+    planAllowsLinearExport: canExport(plan, "linear"),
+    linearIntegration: linear ?? null,
+    priorProject,
+  });
+
+  // STATE: Already pushed (this spec version has a Linear project).
+  // pickLinearPushState only returns these states when both fields
+  // are non-null; coerce with `??` for the type narrowing the compiler
+  // can't see across the function boundary.
+  if (state === "pushed" || state === "pushed-partial") {
+    const projectUrl = spec.linearProjectUrl ?? "";
+    const issueMap = spec.linearIssueMap ?? {};
+    const issueCount = Object.keys(issueMap).length;
+    const expected = spec.ir.userStories.length;
+    const isPartial = state === "pushed-partial";
+
     return (
-      <a
-        href={spec.linearIssueUrl}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium"
-        style={{
-          borderColor: "var(--color-border-subtle)",
-          color: "var(--color-text-primary)",
-        }}
-      >
-        View in Linear{spec.linearIssueIdentifier ? ` · ${spec.linearIssueIdentifier}` : ""} →
-      </a>
+      <div className="flex flex-col gap-2">
+        {showRecreatedNote && (
+          <div
+            role="status"
+            className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
+            style={{
+              borderColor: "var(--color-border-subtle)",
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            <span>Your previous Linear project was deleted; we created a new one.</span>
+            <button
+              type="button"
+              onClick={onDismissRecreatedNote}
+              aria-label="Dismiss"
+              className="hover:opacity-80"
+              style={{ color: "var(--color-text-tertiary)" }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {isPartial && (
+          <StaleBanner
+            message={`${issueCount} of ${expected} stories pushed — retry to fix.`}
+            actionLabel={isPushing ? "Retrying…" : "Retry update"}
+            onAction={onPush}
+            isRunning={isPushing}
+            tone="warn"
+          />
+        )}
+
+        <a
+          href={projectUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="flex items-center justify-between gap-2 rounded-md border px-4 py-2 text-sm font-medium"
+          style={{
+            borderColor: "var(--color-border-subtle)",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          <span className="truncate">
+            Linear ·{" "}
+            <span style={{ fontFamily: "var(--font-mono)" }}>
+              {issueCount} {issueCount === 1 ? "issue" : "issues"}
+            </span>
+          </span>
+          <span>→</span>
+        </a>
+
+        <button
+          type="button"
+          onClick={onPush}
+          disabled={isPushing}
+          className="rounded-md border px-4 py-2 text-sm disabled:opacity-60"
+          style={{
+            borderColor: "var(--color-border-default)",
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {isPushing ? "Pushing…" : "Update from latest spec"}
+        </button>
+
+        {pushError ? (
+          <p className="text-xs" style={{ color: "var(--color-danger)" }}>
+            {pushError}
+          </p>
+        ) : null}
+      </div>
     );
   }
 
-  if (!canExport(plan, "linear")) {
+  // STATES: not yet pushed. Each branch is selected by pickLinearPushState.
+  if (state === "upgrade-required") {
     return (
       <Link
         href="/pricing"
@@ -866,8 +1132,7 @@ function LinearPushBlock({
     );
   }
 
-  const linear = integrations.find((i) => i.provider === "linear");
-  if (!linear?.connected) {
+  if (state === "not-connected") {
     return (
       <Link
         href="/settings/integrations"
@@ -882,16 +1147,7 @@ function LinearPushBlock({
     );
   }
 
-  const defaultTeamId =
-    typeof linear.config?.defaultTeamId === "string"
-      ? linear.config.defaultTeamId
-      : null;
-  const defaultTeamName =
-    typeof linear.config?.defaultTeamName === "string"
-      ? linear.config.defaultTeamName
-      : null;
-
-  if (!defaultTeamId) {
+  if (state === "no-default-team") {
     return (
       <Link
         href="/settings/integrations"
@@ -906,26 +1162,57 @@ function LinearPushBlock({
     );
   }
 
+  // Refinement-gap: prior version had a project; this version doesn't.
+  // Banner + demoted CTA so the PM sees the linkback before clicking.
+  const hasRefinementGap = state === "refinement-gap";
+
   return (
-    <>
+    <div className="flex flex-col gap-2">
+      {hasRefinementGap && priorProject && (
+        <StaleBanner
+          message="This refined spec hasn't been pushed. Your previous Linear project will stay untouched."
+          actionLabel="View previous"
+          onAction={() =>
+            window.open(
+              priorProject.projectUrl,
+              "_blank",
+              "noopener,noreferrer",
+            )
+          }
+          tone="info"
+        />
+      )}
+
       <button
         type="button"
         onClick={onPush}
         disabled={isPushing}
         className="rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-60"
-        style={{
-          borderColor: "var(--color-brand-accent)",
-          color: "var(--color-brand-accent)",
-        }}
+        style={
+          hasRefinementGap
+            ? {
+                borderColor: "var(--color-border-default)",
+                color: "var(--color-text-primary)",
+              }
+            : {
+                borderColor: "var(--color-brand-accent)",
+                background: "var(--color-brand-accent)",
+                color: "var(--color-text-on-accent)",
+              }
+        }
       >
-        {isPushing ? "Pushing…" : `Push to Linear (${defaultTeamName ?? "team"})`}
+        {isPushing
+          ? "Pushing…"
+          : hasRefinementGap
+            ? "Push refined spec as new project"
+            : "Push project to Linear"}
       </button>
       {pushError ? (
         <p className="text-xs" style={{ color: "var(--color-danger)" }}>
           {pushError}
         </p>
       ) : null}
-    </>
+    </div>
   );
 }
 

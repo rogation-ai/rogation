@@ -4,6 +4,44 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.10.0] - 2026-05-14
+
+Linear export becomes a working artifact. When PMs push a spec, Rogation now creates a Linear project with one issue per user story instead of a single wall-of-text ticket. Each story is independently assignable, estimable, and closeable. Acceptance criteria render as native Linear checkboxes inside each issue. Non-functional requirements, edge cases, and QA checklist land in the project description.
+
+Re-pushing a spec opens a confirm modal: update the existing project in place (creates new stories, updates changed ones, archives removed ones) or create a new project (leaves the existing one in Linear untouched). When the prior Linear project was deleted out-of-band, Rogation auto-recovers by creating a fresh one and surfaces a dismissible note. Refined specs that haven't been pushed yet show a banner linking back to the previous Linear project. Partial-failure pushes (some issues created, others failed) show a retry-update banner with the count.
+
+### Added
+- New Linear GraphQL mutations: `projectCreate`, `projectUpdate`, `projectDelete`, `issueUpdate`, `issueArchive`. Existing `issueCreate` accepts an optional `projectId` to associate issues with a project.
+- New target-aware renderer `lib/spec/renderers/linear.ts` that consumes the `SpecIR` directly (honors the IR-first contract documented in CLAUDE.md). Produces a `LinearExportPlan` with reconcile actions; the orchestrator executes the plan.
+- New shared primitive `components/ui/ConfirmDialog.tsx` with focus trap, Esc handler, destructive variant, in-flight progress state, and full a11y (role=dialog, aria-modal, aria-describedby for destructive consequences).
+- New pure-logic module `lib/client/linear-push-state.ts` exposing `pickLinearPushState`, `isPartialPush`, `extractLinearConflictFromError`. 19 unit tests cover every state branch.
+- New `linear_push_status` column on `spec` for the in-flight guard (atomic `idle → pushing` transition prevents double-click races).
+- Markdown sanitization at the renderer trust boundary: escape `[` and `]`, allowlist URLs by parsed hostname (not prefix), break bare URLs with zero-width-joiner, neutralize 3+-backtick fences, strip reference-style link definitions, defensively strip HTML brackets. Defends against LLM-generated content trying to inject phishing links or fake @-mentions into Linear.
+- Rate-limit retry with exponential backoff (1s/4s/16s) in `linearRequest` for HTTP 429 and GraphQL `RATELIMITED` extensions.
+- `success: false` envelope check on every new mutation (the old client only checked `issueCreate`).
+- New `trpc.specs.priorLinearProject` query for the refinement-gap banner.
+- 83 net new tests across `test/linear-renderer.test.ts` (34), `test/push-linear.test.ts` (17), `test/linear-push-state.test.ts` (19), and additions to `test/linear-client.test.ts` (+13).
+- StaleBanner `tone="warn" | "info"` prop (default `warn` for backward compat).
+
+### Changed
+- `LinearPushBlock` in `app/(app)/spec/[opportunityId]/page.tsx` rewritten with 6 mutually-exclusive states routed through the new `pickLinearPushState` helper. "Already pushed" is a two-row layout (project link + outlined Update CTA). First-push CTA copy is "Push project to Linear" (was "Push to Linear").
+- tRPC `specs.pushToLinear` accepts an optional `mode: "create-new" | "update-in-place"`. When omitted on a spec that already has a project, the resolver throws `CONFLICT(linear-project-exists | linear-project-exists-but-empty)` so the UI can render the D3 confirm modal. The resolver uses a typed `LINEAR_PUSH_ERROR_CODE_MAP` instead of nested ternaries.
+- All `window.open(url, "_blank")` calls in the spec editor now include `"noopener,noreferrer"` to prevent tab-nabbing.
+- `recreatedAfterDelete` dismiss state persists in `localStorage` keyed by `linear_project_id` so the note doesn't re-surface on every reload.
+- `priorLinearProject` query is gated by `enabled: latest.data?.linearProjectUrl == null` to skip the fetch when the current spec is already pushed.
+- Citation URLs in issue descriptions use `encodeURIComponent` on `clusterId` defensively.
+- `isUnknownEntityError` narrowed: dropped the bare `"not found"` substring match (was over-broad — would have triggered auto-recovery on "team not found" or "workspace not found"). Now matches `unknown_entity` / `entity_not_found` explicitly.
+- Schema migration `0014_linear_project_export.sql` replaces the single-issue columns (`linear_issue_id`, `linear_issue_identifier`, `linear_issue_url`) with `linear_project_id`, `linear_project_url`, `linear_issue_map` (jsonb keyed by US id), and `linear_push_status`. Partial index on `linear_push_status` is in place for a future stuck-pushing cleanup job.
+
+### Removed
+- `test/push-linear-preconditions.test.ts` — deeply tied to the old single-issue flow. Replaced by `test/push-linear.test.ts` with broader coverage (precondition cascade, in-flight guard, first-push happy path, all-fail cleanup, token-invalid mid-loop, recreatedAfterDelete recovery, update-mode happy path, archive UNKNOWN_ENTITY soft-success, recovery-failure propagation, helper coverage for `detectPriorProjectConflict` + `priorLinearProject`).
+
+### Deferred (filed in TODOS.md)
+- Async Linear push via Inngest worker (P2) — addresses long-DB-transaction concern when multi-tenancy ramps.
+- Cross-spec-version Linear export propagation (P2) — refined specs orphan prior project until follow-up ships.
+- Citation deep-link snapshot for refinement-resilience (P3) — Linear links may 404 after cluster MERGE/SPLIT.
+- AC checkbox state read-back from Linear (P3) — engineer ticks survive PM re-push.
+
 ## [0.10.9.0] - 2026-05-14
 
 PMs can now dismiss irrelevant clusters. Dismissed evidence is permanently excluded from future clustering runs, and a centroid-based matching layer flags new incoming evidence that resembles dismissed patterns for review. PMs manage exclusions from Settings > Learning.
