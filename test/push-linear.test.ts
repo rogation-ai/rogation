@@ -353,6 +353,36 @@ describe("pushSpecToLinear — token-invalid mid-loop", () => {
     // the user can reconnect + re-push via update-in-place.
     expect(client.deleteProject).not.toHaveBeenCalled();
   });
+
+  it("markTokenInvalid returns a static message that never leaks the raw API error", async () => {
+    const client = await import("@/lib/integrations/linear/client");
+    const { LinearApiError } = await import(
+      "@/lib/integrations/linear/client"
+    );
+
+    vi.mocked(client.createProject).mockRejectedValueOnce(
+      new LinearApiError("Linear HTTP 401: Authentication failed: api_key revoked at 2026-05-13T00:00:00Z", 401),
+    );
+
+    const { pushSpecToLinear } = await import("@/lib/evidence/push-linear");
+    const tx = makeTx({ rows: [baseSpecRow, credRow, stateRow] });
+    const res = await pushSpecToLinear(
+      // biome-ignore lint/suspicious/noExplicitAny: test mock
+      { db: tx as any, accountId: "acc-1" },
+      "opp-1",
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toBe("token-invalid");
+      // The message must be a static, human-readable string — not the raw
+      // LinearApiError message which could contain internal API details.
+      expect(res.message).toBe(
+        "Your Linear token expired or was revoked. Disconnect and reconnect Linear in Settings.",
+      );
+      expect(res.message).not.toContain("api_key revoked");
+    }
+  });
 });
 
 describe("pushSpecToLinear — empty-spec", () => {

@@ -274,7 +274,8 @@ async function markTokenInvalid(
   return {
     ok: false,
     error: "token-invalid",
-    message: `Linear rejected the request: ${err.message}. Disconnect and reconnect Linear in Settings.`,
+    message:
+      "Your Linear token expired or was revoked. Disconnect and reconnect Linear in Settings.",
   };
 }
 

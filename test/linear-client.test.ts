@@ -73,6 +73,59 @@ describe("linear client", () => {
     });
   });
 
+  /*
+    extractErrorMessage is a private helper invoked inside linearRequest
+    on non-OK HTTP responses. These tests exercise every branch by
+    varying the response body shape and asserting the resulting
+    LinearApiError message.
+  */
+
+  it("extractErrorMessage: parses JSON errors array into human-readable message", async () => {
+    mockFetch(async () =>
+      new Response(
+        JSON.stringify({
+          errors: [
+            { message: "You do not have permission" },
+            { message: "Scope 'issues:create' required" },
+          ],
+        }),
+        { status: 403 },
+      ),
+    );
+    await expect(fetchViewer("tok")).rejects.toThrow(
+      /You do not have permission; Scope 'issues:create' required/,
+    );
+  });
+
+  it("extractErrorMessage: falls through to truncation when errors array has no messages", async () => {
+    mockFetch(async () =>
+      new Response(
+        JSON.stringify({ errors: [{ extensions: { code: "FORBIDDEN" } }] }),
+        { status: 403 },
+      ),
+    );
+    // No message fields → JSON body gets truncated as raw text
+    await expect(fetchViewer("tok")).rejects.toThrow(/Linear HTTP 403:/);
+  });
+
+  it("extractErrorMessage: falls through to truncation on non-JSON body", async () => {
+    mockFetch(async () =>
+      new Response("Bad Gateway", { status: 502 }),
+    );
+    await expect(fetchViewer("tok")).rejects.toThrow(
+      /Linear HTTP 502: Bad Gateway/,
+    );
+  });
+
+  it("extractErrorMessage: returns 'HTTP <status>' when body is empty", async () => {
+    mockFetch(async () =>
+      new Response("", { status: 500 }),
+    );
+    await expect(fetchViewer("tok")).rejects.toThrow(
+      /Linear HTTP 500: HTTP 500/,
+    );
+  });
+
   it("graphql errors throw LinearApiError", async () => {
     mockFetch(async () =>
       new Response(

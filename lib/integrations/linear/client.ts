@@ -54,6 +54,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function extractErrorMessage(body: string, status: number): string {
+  try {
+    const json = JSON.parse(body) as {
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      const msgs = json.errors
+        .map((e) => e.message)
+        .filter(Boolean)
+        .join("; ");
+      if (msgs) return msgs;
+    }
+  } catch {
+    // Not JSON — fall through to raw truncation.
+  }
+  return body.slice(0, 200) || `HTTP ${status}`;
+}
+
 /*
   Detect a rate-limit signal from a Linear response. Linear can signal
   in two ways:
@@ -116,7 +134,7 @@ async function linearRequest<T>(
       }
       const body = await res.text().catch(() => "");
       throw new LinearApiError(
-        `Linear HTTP ${res.status}: ${body.slice(0, 200)}`,
+        `Linear HTTP ${res.status}: ${extractErrorMessage(body, res.status)}`,
         res.status,
       );
     }
