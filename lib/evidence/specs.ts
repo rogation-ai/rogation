@@ -560,8 +560,12 @@ export interface SpecRow {
   ir: SpecIR;
   markdown: string | null;
   updatedAt: Date;
-  linearIssueUrl: string | null;
-  linearIssueIdentifier: string | null;
+  linearProjectUrl: string | null;
+  linearProjectId: string | null;
+  linearIssueMap: Record<
+    string,
+    { id: string; identifier: string; url: string }
+  > | null;
   linearPushedAt: Date | null;
   stale: boolean;
 }
@@ -580,8 +584,9 @@ export async function getLatestSpec(
       ir: specs.contentIr,
       markdown: specs.contentMd,
       updatedAt: specs.updatedAt,
-      linearIssueUrl: specs.linearIssueUrl,
-      linearIssueIdentifier: specs.linearIssueIdentifier,
+      linearProjectUrl: specs.linearProjectUrl,
+      linearProjectId: specs.linearProjectId,
+      linearIssueMap: specs.linearIssueMap,
       linearPushedAt: specs.linearPushedAt,
       stale: specs.stale,
     })

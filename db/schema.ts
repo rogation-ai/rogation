@@ -544,12 +544,24 @@ export const specs = pgTable(
       acceptanceTestable: boolean;
       llmNotes?: string;
     }>(),
-    // Linear push metadata. Populated when pushSpecToLinear succeeds.
-    // Cleared implicitly on regenerate (new version = new row with
-    // NULLs). Old versions retain their URL as audit.
-    linearIssueId: text("linear_issue_id"),
-    linearIssueIdentifier: text("linear_issue_identifier"),
-    linearIssueUrl: text("linear_issue_url"),
+    // Linear project export metadata. Populated when pushSpecToLinear
+    // succeeds. Cleared implicitly on regenerate (new version = new
+    // row with NULLs). Old versions retain their project URL as audit.
+    //
+    // linear_issue_map: Record<usId, {id, identifier, url}>.
+    //   - id is Linear's internal UUID (mutations).
+    //   - identifier + url are for UI display.
+    //
+    // linear_push_status: in-flight guard. 'idle' | 'pushing'. The
+    // orchestrator flips to 'pushing' before write phase, back to
+    // 'idle' on success/failure. Prevents double-click races that the
+    // procedure-entry rate limit alone cannot stop.
+    linearProjectId: text("linear_project_id"),
+    linearProjectUrl: text("linear_project_url"),
+    linearIssueMap: jsonb("linear_issue_map").$type<
+      Record<string, { id: string; identifier: string; url: string }>
+    >(),
+    linearPushStatus: text("linear_push_status").notNull().default("idle"),
     linearPushedAt: timestamp("linear_pushed_at", { withTimezone: true }),
     // Set true when the linked opportunity gets staled by re-clustering.
     // Cleared on regenerate (new version row inserts with stale=false).
