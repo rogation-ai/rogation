@@ -79,6 +79,7 @@ describe("rate-limit module (no Upstash configured)", () => {
       "cluster-run",
       "connector-ingest",
       "linear-push",
+      "scope-reroute",
       "share-link",
       "spec-chat",
       "webhook",

@@ -120,6 +120,19 @@ export const RATE_LIMIT_PRESETS = {
     requests: 100,
     window: "1 h",
   },
+  /**
+   * Manual scope re-route. By accountId. routeAllEvidence is O(rows ×
+   * scopes) sequential UPDATEs in a single transaction. A PM clicking
+   * the "Re-route now" button on /settings/scopes shouldn't be able to
+   * stack concurrent re-routes (or hold a long tx via mash-clicking
+   * across tabs). 10/hour is well above any human iteration rhythm
+   * (re-route after adding new evidence, after editing a brief, etc.)
+   * while blocking a tight script.
+   */
+  "scope-reroute": {
+    requests: 10,
+    window: "1 h",
+  },
 } as const;
 
 export type RateLimitPreset = keyof typeof RATE_LIMIT_PRESETS;

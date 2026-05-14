@@ -58,6 +58,13 @@ function InsightsPageInner(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
+  // Switching scopes can leave selectedId pointing at a cluster that
+  // isn't in the new scope's list. Reset so the auto-select effect
+  // below picks the new top cluster instead of 404ing the detail query.
+  useEffect(() => {
+    setSelectedId(null);
+  }, [scopeId]);
+
   // Resume polling after a page reload if the latest run is still in flight.
   // One-shot: only seeds when we have no activeRunId yet.
   const latest = trpc.insights.latestRun.useQuery(undefined, {
@@ -90,10 +97,13 @@ function InsightsPageInner(): React.JSX.Element {
     },
   });
 
-  // The router accepts a uuid only (re-clustering "unscoped" has no
-  // brief to centre on). When the global filter is "unscoped" we run
-  // unscoped, which still narrows the worker to rows with scope_id IS
-  // NULL via the same helper synthesis uses.
+  // The router accepts a uuid only — see server/routers/insights.ts:95.
+  // When the global filter is "unscoped" we collapse to undefined,
+  // which means the worker re-clusters every scope. The dispatch row
+  // also dedups against `scope_id IS NULL`, so an "All" run and an
+  // "Unscoped" run share a bucket. Both are pre-existing surprises;
+  // proper fix is to extend the run input + orchestrator to accept
+  // the "unscoped" literal as a first-class re-cluster target.
   const runScopeId =
     scopeId && scopeId !== "unscoped" ? scopeId : undefined;
 

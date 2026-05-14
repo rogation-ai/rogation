@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { evidence, evidenceEmbeddings, pmScopes } from "@/db/schema";
 import type { Tx } from "@/db/scoped";
 import { cosineSim } from "@/lib/evidence/clustering/knn";
@@ -109,11 +109,17 @@ export async function routeAllEvidence(
   );
 
   if (activeScopes.length === 0) {
-    await db
-      .update(evidence)
-      .set({ scopeId: null })
+    // No active scopes (or every scope's brief embedding failed to
+    // backfill). Earlier code unconditionally NULLed scope_id on every
+    // evidence row here — silent data loss reachable by one click on
+    // the new "Re-route now" button when an embedding lags. Bail out
+    // instead; routing is idempotent so the next call with active
+    // scopes will recompute correctly.
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(evidence)
       .where(eq(evidence.accountId, accountId));
-    return { routed: 0, unscoped: 0, total: 0 };
+    return { routed: 0, unscoped: n ?? 0, total: n ?? 0 };
   }
 
   const rows = await db

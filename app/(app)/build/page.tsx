@@ -75,8 +75,6 @@ const EFFORT_WEIGHT: Record<string, number> = {
 };
 
 export default function BuildPage(): React.JSX.Element {
-  // useScopeFilter wraps useSearchParams which forces dynamic
-  // rendering; needs a Suspense boundary in the static render path.
   return (
     <Suspense fallback={<SkeletonList count={5} />}>
       <BuildPageInner />
