@@ -24,9 +24,19 @@ import { authedProcedure, router } from "@/server/trpc";
 */
 
 export const specsRouter = router({
-  list: authedProcedure.query(async ({ ctx }) => {
-    return listSpecs({ db: ctx.db, accountId: ctx.accountId });
-  }),
+  list: authedProcedure
+    .input(
+      z.object({
+        scopeId: z.string().uuid().or(z.literal("unscoped")).nullish(),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return listSpecs({
+        db: ctx.db,
+        accountId: ctx.accountId,
+        scopeId: input?.scopeId,
+      });
+    }),
 
   getLatest: authedProcedure
     .input(z.object({ opportunityId: z.string().uuid() }))

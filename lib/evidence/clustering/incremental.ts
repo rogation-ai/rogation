@@ -20,6 +20,7 @@ import {
 import { cosineSim, nearestClusters } from "./knn";
 import { CLUSTERING_THRESHOLDS } from "./thresholds";
 import { ClusteringError } from "./errors";
+import { withScopeFilter } from "@/lib/evidence/scope-filter";
 
 /*
   Incremental clustering (Phase B).
@@ -65,6 +66,7 @@ const KNN_HINT_COUNT = 4;
 export interface IncrementalContext {
   db: Tx;
   accountId: string;
+  scopeId?: string;
 }
 
 export interface IncrementalResult {
@@ -89,6 +91,7 @@ export async function runIncrementalClustering(
   productContext?: string,
 ): Promise<IncrementalResult> {
   // 1. Load live clusters + centroids.
+  const scopeClusterWhere = withScopeFilter(ctx.scopeId ?? null, insightClusters.scopeId);
   const existingClusters = await ctx.db
     .select({
       id: insightClusters.id,
@@ -104,10 +107,8 @@ export async function runIncrementalClustering(
       and(
         eq(insightClusters.accountId, ctx.accountId),
         isNull(insightClusters.tombstonedInto),
-        // Defense in depth: orchestrator sweeps orphans before
-        // dispatching here, but an orphan slipping through would
-        // poison the LLM prompt with an empty <evidence> block.
         gt(insightClusters.frequency, 0),
+        scopeClusterWhere,
       ),
     )
     .orderBy(desc(insightClusters.frequency))
@@ -124,7 +125,8 @@ export async function runIncrementalClustering(
     );
   }
 
-  // 2. Load all evidence + embeddings for this account.
+  // 2. Load all evidence + embeddings for this scope.
+  const scopeEvidenceWhere = withScopeFilter(ctx.scopeId ?? null, evidence.scopeId);
   const evidenceRows = await ctx.db
     .select({
       id: evidence.id,
@@ -137,7 +139,7 @@ export async function runIncrementalClustering(
       evidenceEmbeddings,
       eq(evidenceEmbeddings.evidenceId, evidence.id),
     )
-    .where(eq(evidence.accountId, ctx.accountId));
+    .where(and(eq(evidence.accountId, ctx.accountId), scopeEvidenceWhere));
 
   // Validate each row's embedding shape before narrowing. A blanket
   // `as` cast would silently pass non-array values from a driver

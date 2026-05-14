@@ -4,6 +4,23 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.7.0] - 2026-05-13
+
+PMs can now create scopes to route evidence by domain. Each scope has a text brief that gets embedded; incoming evidence is matched by cosine similarity and filtered across all pages.
+
+### Added
+- Scope routing via embedding similarity. PMs write a brief describing a domain (e.g. "onboarding"), evidence is auto-routed to the closest scope above a 0.70 cosine threshold.
+- Settings > Scopes page with full CRUD: create, edit, delete scopes. Preview button shows how many evidence rows would match a brief before committing.
+- Scope selector in the sidebar. Hidden when no scopes exist. Filters evidence, insights, build, and specs pages via `?scope=id` URL param.
+- `withScopeFilter()` DRY helper applied to all list resolvers (evidence, insights, opportunities, specs).
+- Scope-isolated clustering. The orchestrator, incremental, and full clustering paths all filter by scopeId. Advisory lock includes scopeId for cross-scope parallelism.
+- Migration 0012: `pm_scope` table, `scope_id` nullable FK on evidence/clusters/opportunities/specs/insight_runs, compound indexes, RLS policy.
+
+### Fixed
+- Cluster dispatch dedup now includes scopeId so cross-scope dispatches don't incorrectly return a pending run from a different scope.
+
+---
+
 ## [0.10.6.0] - 2026-05-13
 
 Multiple PMs can now share a Rogation workspace via Clerk Organizations.

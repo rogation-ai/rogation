@@ -7,6 +7,7 @@ import {
   listClusters,
 } from "@/lib/evidence/synthesis";
 import { dispatchClusterRun } from "@/lib/evidence/clustering/dispatch";
+import { withScopeFilter } from "@/lib/evidence/scope-filter";
 import { authedProcedure, router } from "@/server/trpc";
 
 /*
@@ -35,9 +36,19 @@ const RUN_COLUMNS = {
 } as const;
 
 export const insightsRouter = router({
-  list: authedProcedure.query(async ({ ctx }) => {
-    return listClusters({ db: ctx.db, accountId: ctx.accountId });
-  }),
+  list: authedProcedure
+    .input(
+      z.object({
+        scopeId: z.string().uuid().or(z.literal("unscoped")).nullish(),
+      }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return listClusters({
+        db: ctx.db,
+        accountId: ctx.accountId,
+        scopeId: input?.scopeId,
+      });
+    }),
 
   detail: authedProcedure
     .input(z.object({ clusterId: z.string().uuid() }))
@@ -78,9 +89,19 @@ export const insightsRouter = router({
         );
     }),
 
-  run: authedProcedure.mutation(async ({ ctx }) => {
-    return dispatchClusterRun({ db: ctx.db, accountId: ctx.accountId });
-  }),
+  run: authedProcedure
+    .input(
+      z.object({
+        scopeId: z.string().uuid().nullish(),
+      }).optional(),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return dispatchClusterRun({
+        db: ctx.db,
+        accountId: ctx.accountId,
+        scopeId: input?.scopeId ?? undefined,
+      });
+    }),
 
   runStatus: authedProcedure
     .input(z.object({ runId: z.string().uuid() }))

@@ -52,7 +52,7 @@ const PLAN_TIER_SCHEMA = z.enum(["free", "solo", "pro"]);
 export async function runClusterEvidence(
   input: ClusterRequestedData,
 ): Promise<{ status: "done" | "failed"; error?: string }> {
-  const { runId, accountId } = input;
+  const { runId, accountId, scopeId } = input;
   const startedAt = Date.now();
 
   try {
@@ -110,7 +110,7 @@ export async function runClusterEvidence(
       await assertTokenBudget(tx, plan, accountId);
 
       const orchestratorResult = await runClustering(
-        { db: tx, accountId },
+        { db: tx, accountId, scopeId },
         {
           onUsage: async (u) => {
             await chargeAndEnforce(tx, plan, accountId, u);
@@ -216,6 +216,7 @@ export const clusterEvidence = inngest.createFunction(
       runClusterEvidence({
         runId: data.runId,
         accountId: data.accountId,
+        scopeId: data.scopeId,
       }),
     );
   },

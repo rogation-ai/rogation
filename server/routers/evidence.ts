@@ -8,6 +8,7 @@ import {
   recomputeClusterAggregates,
 } from "@/lib/evidence/clustering/apply";
 import { seedSampleEvidence } from "@/lib/evidence/sample-seed";
+import { withScopeFilter } from "@/lib/evidence/scope-filter";
 import { countResource } from "@/lib/plans";
 import { authedProcedure, router } from "@/server/trpc";
 
@@ -62,9 +63,11 @@ export const evidenceRouter = router({
       z.object({
         limit: z.number().int().positive().max(100).default(50),
         cursor: z.string().datetime().optional(),
+        scopeId: z.string().uuid().or(z.literal("unscoped")).nullish(),
       }),
     )
     .query(async ({ ctx, input }) => {
+      const scopeWhere = withScopeFilter(input.scopeId, evidence.scopeId);
       const rows = await ctx.db
         .select({
           id: evidence.id,
@@ -72,10 +75,11 @@ export const evidenceRouter = router({
           sourceRef: evidence.sourceRef,
           content: evidence.content,
           segment: evidence.segment,
+          scopeId: evidence.scopeId,
           createdAt: evidence.createdAt,
         })
         .from(evidence)
-        .where(eq(evidence.accountId, ctx.accountId))
+        .where(and(eq(evidence.accountId, ctx.accountId), scopeWhere))
         .orderBy(desc(evidence.createdAt))
         .limit(input.limit);
 

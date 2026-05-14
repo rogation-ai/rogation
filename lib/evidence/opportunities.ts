@@ -12,6 +12,7 @@ import {
   type EffortEstimate,
   type OpportunityPrimitive,
 } from "@/lib/llm/prompts/opportunity-score";
+import { withScopeFilter, type ScopeFilter } from "@/lib/evidence/scope-filter";
 import type { Tx } from "@/db/scoped";
 
 /*
@@ -56,6 +57,7 @@ const DEFAULT_WEIGHTS: WeightSet = {
 export interface OpportunityCtx {
   db: Tx;
   accountId: string;
+  scopeId?: ScopeFilter;
 }
 
 export interface OpportunityRunResult {
@@ -510,6 +512,7 @@ export interface OpportunityRow {
 export async function listOpportunities(
   ctx: OpportunityCtx,
 ): Promise<OpportunityRow[]> {
+  const scopeWhere = withScopeFilter(ctx.scopeId, opportunitiesTbl.scopeId);
   const opps = await ctx.db
     .select({
       id: opportunitiesTbl.id,
@@ -524,7 +527,7 @@ export async function listOpportunities(
       stale: opportunitiesTbl.stale,
     })
     .from(opportunitiesTbl)
-    .where(eq(opportunitiesTbl.accountId, ctx.accountId))
+    .where(and(eq(opportunitiesTbl.accountId, ctx.accountId), scopeWhere))
     .orderBy(desc(opportunitiesTbl.score));
 
   const oppIds = opps.map((o) => o.id);
