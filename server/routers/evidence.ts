@@ -64,10 +64,14 @@ export const evidenceRouter = router({
         limit: z.number().int().positive().max(100).default(50),
         cursor: z.string().datetime().optional(),
         scopeId: z.string().uuid().or(z.literal("unscoped")).nullish(),
+        showExcluded: z.boolean().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
       const scopeWhere = withScopeFilter(input.scopeId, evidence.scopeId);
+      const excludedWhere = input.showExcluded
+        ? eq(evidence.excluded, true)
+        : eq(evidence.excluded, false);
       const rows = await ctx.db
         .select({
           id: evidence.id,
@@ -76,10 +80,12 @@ export const evidenceRouter = router({
           content: evidence.content,
           segment: evidence.segment,
           scopeId: evidence.scopeId,
+          excluded: evidence.excluded,
+          exclusionPending: evidence.exclusionPending,
           createdAt: evidence.createdAt,
         })
         .from(evidence)
-        .where(and(eq(evidence.accountId, ctx.accountId), scopeWhere))
+        .where(and(eq(evidence.accountId, ctx.accountId), scopeWhere, excludedWhere))
         .orderBy(desc(evidence.createdAt))
         .limit(input.limit);
 

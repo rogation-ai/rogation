@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import { useScopeFilter } from "@/lib/client/use-scope-filter";
@@ -181,6 +181,25 @@ function InsightsPageInner(): React.JSX.Element {
   const clusterIds = (list.data ?? []).map((c) => c.id);
   const feedback = useFeedbackThumbs("insight_cluster", clusterIds);
 
+  const pendingCount = trpc.learning.pendingCount.useQuery();
+  const dismiss = trpc.learning.dismiss.useMutation({
+    onSuccess: () => {
+      setSelectedId(null);
+      void utils.insights.list.invalidate();
+      void utils.insights.latestRun.invalidate();
+      void pendingCount.refetch();
+    },
+  });
+  const [dismissReason, setDismissReason] = useState("");
+  const [showDismissDialog, setShowDismissDialog] = useState(false);
+
+  const handleDismiss = useCallback(() => {
+    if (!selectedId) return;
+    dismiss.mutate({ clusterId: selectedId, reason: dismissReason || undefined });
+    setShowDismissDialog(false);
+    setDismissReason("");
+  }, [selectedId, dismissReason, dismiss]);
+
   const maxFrequency = Math.max(
     1,
     ...(list.data ?? []).map((c) => c.frequency),
@@ -239,7 +258,17 @@ function InsightsPageInner(): React.JSX.Element {
     );
   }
 
+  const pendingN = pendingCount.data ?? 0;
+
   return (
+    <div className="flex flex-col gap-4">
+      {pendingN > 0 && (
+        <StaleBanner
+          message={`${pendingN} new piece${pendingN === 1 ? "" : "s"} of evidence match${pendingN === 1 ? "es" : ""} a dismissed pattern. Review matches.`}
+          actionLabel="Review in Settings"
+          onAction={() => { window.location.href = "/settings/learning"; }}
+        />
+      )}
     <div className="grid grid-cols-[240px_1fr_260px] gap-6">
       {/* Left rail — cluster list */}
       <aside className="flex flex-col gap-2">
@@ -323,7 +352,70 @@ function InsightsPageInner(): React.JSX.Element {
                 onChange={(next) => feedback.setVote(detail.data.id, next)}
                 label={`Rate cluster: ${detail.data.title}`}
               />
+              <button
+                type="button"
+                onClick={() => setShowDismissDialog(true)}
+                disabled={dismiss.isPending}
+                className="ml-2 rounded-md border px-3 py-1.5 text-xs font-medium transition hover:brightness-95 disabled:opacity-50"
+                style={{
+                  borderColor: "var(--color-border-default)",
+                  color: "var(--color-danger)",
+                  background: "var(--color-surface-app)",
+                }}
+                title="Dismiss this pattern from future clustering"
+              >
+                {dismiss.isPending ? "Dismissing..." : "Dismiss"}
+              </button>
             </header>
+
+            {showDismissDialog && (
+              <div
+                className="rounded-md border p-4 mb-2"
+                style={{
+                  borderColor: "var(--color-border-default)",
+                  background: "var(--color-surface-sunken)",
+                }}
+              >
+                <p className="text-sm mb-2" style={{ color: "var(--color-text-primary)" }}>
+                  Dismiss &ldquo;{detail.data.title}&rdquo;? Evidence in this cluster will be
+                  excluded from future clustering.
+                </p>
+                <input
+                  type="text"
+                  placeholder="Reason (optional)"
+                  value={dismissReason}
+                  onChange={(e) => setDismissReason(e.target.value)}
+                  maxLength={500}
+                  className="w-full rounded-md border px-3 py-2 text-sm mb-3"
+                  style={{
+                    borderColor: "var(--color-border-subtle)",
+                    background: "var(--color-surface-app)",
+                    color: "var(--color-text-primary)",
+                  }}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDismiss}
+                    className="rounded-md px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110"
+                    style={{ background: "var(--color-danger)" }}
+                  >
+                    Dismiss pattern
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowDismissDialog(false); setDismissReason(""); }}
+                    className="rounded-md border px-3 py-1.5 text-sm font-medium transition hover:brightness-95"
+                    style={{
+                      borderColor: "var(--color-border-default)",
+                      color: "var(--color-text-secondary)",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
             <p
               className="max-w-xl text-base"
@@ -366,6 +458,7 @@ function InsightsPageInner(): React.JSX.Element {
       <aside>
         <LinkedOpportunities clusterId={selectedId} />
       </aside>
+    </div>
     </div>
   );
 }

@@ -92,6 +92,13 @@
       "when": 1778800000000,
       "tag": "0012_scope_routing",
       "breakpoints": false
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778900000000,
+      "tag": "0013_cluster_exclusions",
+      "breakpoints": false
     }
   ]
 }

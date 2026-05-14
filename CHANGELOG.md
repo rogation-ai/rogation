@@ -4,6 +4,28 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.9.0] - 2026-05-14
+
+PMs can now dismiss irrelevant clusters. Dismissed evidence is permanently excluded from future clustering runs, and a centroid-based matching layer flags new incoming evidence that resembles dismissed patterns for review. PMs manage exclusions from Settings > Learning.
+
+### Added
+- Nuclear exclusion system: dismiss a cluster to permanently flag all its evidence as excluded and tombstone the cluster. Two-layer defense: layer 1 flags existing evidence, layer 2 matches new incoming evidence against exclusion centroids.
+- Pending review for new evidence: when new evidence matches a dismissed pattern (cosine sim >= 0.75), it is flagged as `exclusion_pending` for PM review instead of being silently excluded.
+- LLM prompt augmentation: dismissed pattern labels are injected into clustering prompts so the LLM avoids re-creating dismissed themes.
+- Settings > Learning page with exclusion management: view active/inactive exclusions, strength bar, unexclude (restore evidence + reactivate cluster), and delete.
+- Dismiss button on cluster detail header (Insights page) with confirmation dialog and optional reason field.
+- Pending review banner on Insights page when evidence matches a dismissed pattern.
+- Evidence list filter: `showExcluded` option to view excluded evidence separately.
+- `cluster_exclusion` table with centroid vector, strength-based decay (0.02/run, 180-day window), and RLS policy.
+- `tombstone_reason` enum on `insight_cluster` to distinguish merge vs dismiss tombstones (prevents un-tombstoning merged clusters).
+- `excluded`, `exclusion_pending`, `flagged_by_exclusion_id` columns on evidence table.
+- `withExcludedFilter()` DRY helper applied to all clustering queries.
+- `cluster-dismiss` rate limit preset (20/hr/account).
+- `canManageExclusions()` plan gate: dismiss is available to all plans, management UI (Settings > Learning) is Solo+ only.
+- 16 new test cases across 2 test files (8 pure + 8 DB-gated).
+
+---
+
 ## [0.10.8.0] - 2026-05-14
 
 Scope filtering now actually filters. The selector that shipped with v0.10.7.0 was writing `?scope=<id>` to the URL but no consumer page was reading it — so changing the dropdown did nothing. This release wires it end-to-end and tightens the routing threshold so realistic PM briefs actually route evidence.

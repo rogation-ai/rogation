@@ -86,6 +86,7 @@ const FORCE_RLS_TABLES = [
   "integration_state",
   "llm_usage",
   "insight_run",
+  "cluster_exclusion",
 ];
 
 type TestDb = ReturnType<typeof drizzle<typeof schema>>;

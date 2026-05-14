@@ -13,6 +13,8 @@ import { runConsolidationPass } from "./consolidation";
 import type { InsightRunMode } from "@/db/schema";
 import { loadProductContext } from "@/lib/evidence/load-product-context";
 import { withScopeFilter } from "@/lib/evidence/scope-filter";
+import { loadDismissedLabels, decayExclusions } from "@/lib/evidence/exclusions";
+import { cdataEscape } from "@/lib/llm/prompts/json-shape";
 
 /*
   Re-cluster dispatch (design §7 rule).
@@ -64,7 +66,13 @@ async function ensureEmbeddings(db: Tx, accountId: string, scopeId?: string): Pr
     .from(evidence)
     .leftJoin(evidenceEmbeddings, eq(evidenceEmbeddings.evidenceId, evidence.id))
     .where(
-      and(eq(evidence.accountId, accountId), isNull(evidenceEmbeddings.evidenceId), scopeWhere),
+      and(
+        eq(evidence.accountId, accountId),
+        eq(evidence.excluded, false),
+        eq(evidence.exclusionPending, false),
+        isNull(evidenceEmbeddings.evidenceId),
+        scopeWhere,
+      ),
     );
 
   if (missing.length === 0) return 0;
@@ -138,6 +146,21 @@ export async function runClustering(
   );
   const mergedOpts = { ...opts, ...promptOpts };
 
+  const dismissedLabels = await loadDismissedLabels(ctx.db, ctx.accountId, ctx.scopeId);
+  let effectiveProductContext = productContextBlock;
+  if (dismissedLabels.length > 0) {
+    const dismissedBlock = dismissedLabels
+      .map((d) => {
+        const reasonSuffix = d.reason ? ` (reason: ${cdataEscape(d.reason)})` : "";
+        return `- ${cdataEscape(d.label)}${reasonSuffix}`;
+      })
+      .join("\n");
+    const block = `<dismissed-patterns>\nThe following patterns were previously dismissed by this PM as not relevant. Do NOT resurface these themes or create clusters similar to them:\n${dismissedBlock}\n</dismissed-patterns>`;
+    effectiveProductContext = effectiveProductContext
+      ? `${effectiveProductContext}\n\n${block}`
+      : block;
+  }
+
   const [clusterCountRow] = await ctx.db
     .select({ n: count() })
     .from(insightClusters)
@@ -174,7 +197,7 @@ export async function runClustering(
     const { plan, evidenceUsed, promptHash } = await runFullClustering(
       { db: ctx.db, accountId: ctx.accountId, scopeId: ctx.scopeId },
       mergedOpts,
-      productContextBlock,
+      effectiveProductContext,
     );
     const { clustersCreated, createdClusterIds } = await applyClusterActions(
       ctx.db,
@@ -257,6 +280,10 @@ export async function runClustering(
       createdThisRun,
       lastPromptHash,
     );
+  }
+
+  if (dismissedLabels.length > 0) {
+    await decayExclusions(ctx.db, ctx.accountId);
   }
 
   return {

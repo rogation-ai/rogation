@@ -241,6 +241,15 @@ export function hasOutcomeTracking(plan: PlanTier): boolean {
   return PLAN_LIMITS[plan].outcomeTracking;
 }
 
+/**
+ * Whether the account can manage exclusions via the Settings > Learning
+ * UI. Dismiss itself is available to all plans (inline on insights);
+ * the management dashboard (list / undo / delete) is Solo+ only.
+ */
+export function canManageExclusions(plan: PlanTier): boolean {
+  return plan !== "free";
+}
+
 /* --------------------------- budget soft-warning -------------------------- */
 
 /** 80% of the monthly token budget — emit a warning banner + email above this line. */
