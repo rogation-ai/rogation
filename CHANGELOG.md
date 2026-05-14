@@ -4,6 +4,16 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.10.2] - 2026-05-14
+
+Linear push errors no longer dump raw JSON to the user. When a token is expired or revoked, PMs see "Your Linear token expired or was revoked" instead of a wall of `{"errors":[{"message":"Authentication required...}`. The Linear HTTP client now extracts human-readable messages from JSON error responses before surfacing them.
+
+### Fixed
+- `extractErrorMessage` helper in `lib/integrations/linear/client.ts` parses Linear's JSON error response and returns just the `errors[].message` fields instead of the raw body.
+- `markTokenInvalid` in `push-linear.ts` uses a static, user-friendly message instead of embedding the raw `LinearApiError.message`.
+
+---
+
 ## [0.10.10.1] - 2026-05-14
 
 When a Linear push fails with a 401, PMs now see the actual error Linear returned instead of a generic "token was revoked" message. The OAuth callback also verifies that the granted token includes write scope before storing it, so a misconfigured OAuth app is caught at connect time rather than at push time.
