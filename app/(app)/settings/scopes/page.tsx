@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 
 export default function ScopesPage(): React.JSX.Element {
@@ -31,6 +31,24 @@ export default function ScopesPage(): React.JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editBrief, setEditBrief] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [menuOpen]);
 
   function handleCreate() {
     if (!name.trim() || !brief.trim()) return;
@@ -86,20 +104,6 @@ export default function ScopesPage(): React.JSX.Element {
         </div>
         {!showCreate && (
           <div className="flex items-center gap-2 shrink-0">
-            {scopes && scopes.length > 0 && (
-              <button
-                onClick={() => rerouteMutation.mutate()}
-                disabled={rerouteMutation.isPending}
-                className="whitespace-nowrap rounded border px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-                style={{
-                  borderColor: "var(--color-border-subtle)",
-                  color: "var(--color-text-secondary)",
-                }}
-                title="Re-run scope routing for all evidence on this account."
-              >
-                {rerouteMutation.isPending ? "Re-routing…" : "Re-route"}
-              </button>
-            )}
             <button
               onClick={() => setShowCreate(true)}
               className="whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium text-white"
@@ -107,6 +111,59 @@ export default function ScopesPage(): React.JSX.Element {
             >
               New scope
             </button>
+            {scopes && scopes.length > 0 && (
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className="flex h-8 w-8 items-center justify-center rounded border"
+                  style={{
+                    borderColor: "var(--color-border-subtle)",
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="8" cy="3" r="1.4" />
+                    <circle cx="8" cy="8" r="1.4" />
+                    <circle cx="8" cy="13" r="1.4" />
+                  </svg>
+                </button>
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 mt-1 w-48 rounded border py-1 text-sm shadow-lg z-10"
+                    style={{
+                      background: "var(--color-surface-raised)",
+                      borderColor: "var(--color-border-default)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        rerouteMutation.mutate();
+                      }}
+                      disabled={rerouteMutation.isPending}
+                      className="block w-full px-3 py-1.5 text-left disabled:opacity-50 hover:bg-[var(--color-surface-sunken)]"
+                    >
+                      {rerouteMutation.isPending
+                        ? "Re-routing…"
+                        : "Re-route all evidence"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
