@@ -4,6 +4,17 @@ All notable changes to Rogation are recorded here. Format loosely based on [Keep
 
 ---
 
+## [0.10.10.1] - 2026-05-14
+
+When a Linear push fails with a 401, PMs now see the actual error Linear returned instead of a generic "token was revoked" message. The OAuth callback also verifies that the granted token includes write scope before storing it, so a misconfigured OAuth app is caught at connect time rather than at push time.
+
+### Fixed
+- `markTokenInvalid` in `push-linear.ts` now includes the actual Linear API error in the user-facing message instead of the hardcoded "Linear token was revoked."
+- OAuth callback scope verification: rejects tokens missing `write` scope with a clear `insufficient_scope` error on the settings page.
+- Scope delimiter parsing handles both comma-separated (Linear) and space-separated (RFC 6749) formats.
+
+---
+
 ## [0.10.10.0] - 2026-05-14
 
 Linear export becomes a working artifact. When PMs push a spec, Rogation now creates a Linear project with one issue per user story instead of a single wall-of-text ticket. Each story is independently assignable, estimable, and closeable. Acceptance criteria render as native Linear checkboxes inside each issue. Non-functional requirements, edge cases, and QA checklist land in the project description.

@@ -71,9 +71,17 @@ export async function GET(req: NextRequest) {
     let viewer;
     try {
       token = await exchangeCodeForToken(code);
-      // One round-trip to learn which workspace the PM just connected —
-      // cached in integration_state.config so the settings UI doesn't
-      // re-query Linear for display text on every page load.
+
+      const granted =
+        token.scope?.split(/[,\s]+/).filter(Boolean) ?? [];
+      if (!granted.includes("write")) {
+        console.warn(
+          "Linear OAuth callback: token missing write scope. Granted:",
+          token.scope,
+        );
+        return { ok: false as const, reason: "insufficient_scope" };
+      }
+
       viewer = await fetchViewer(token.access_token);
     } catch (err) {
       console.warn("Linear OAuth callback: provider call failed:", err);
@@ -166,7 +174,7 @@ export async function GET(req: NextRequest) {
 
   if (!result.ok) {
     console.warn("Linear OAuth callback rejected:", result.reason);
-    return redirect(SETTINGS_ERR);
+    return redirect(`${SETTINGS_ERR}&reason=${result.reason}`);
   }
 
   return redirect(SETTINGS_OK);
