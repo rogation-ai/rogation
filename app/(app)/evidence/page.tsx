@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { SourceIcon, sourceLabel, type SourceType } from "@/components/ui/SourceIcon";
 import { SegmentTag } from "@/components/ui/SegmentTag";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonList } from "@/components/ui/LoadingSkeleton";
 import { toast } from "sonner";
+import { useScopeFilter } from "@/lib/client/use-scope-filter";
 import { truncate, formatDate } from "./format";
 
 /*
@@ -25,7 +26,23 @@ import { truncate, formatDate } from "./format";
 const PREVIEW_CHARS = 240;
 
 export default function EvidenceLibraryPage(): React.JSX.Element {
-  const listQ = trpc.evidence.list.useQuery({ limit: 100 });
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-6">
+          <Header count={null} />
+          <SkeletonList count={5} />
+        </div>
+      }
+    >
+      <EvidenceLibraryPageInner />
+    </Suspense>
+  );
+}
+
+function EvidenceLibraryPageInner(): React.JSX.Element {
+  const scopeId = useScopeFilter();
+  const listQ = trpc.evidence.list.useQuery({ limit: 100, scopeId });
   const utils = trpc.useUtils();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 

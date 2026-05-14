@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 
 export default function ScopesPage(): React.JSX.Element {
@@ -21,6 +21,9 @@ export default function ScopesPage(): React.JSX.Element {
     onSuccess: () => utils.scopes.list.invalidate(),
   });
   const previewMutation = trpc.scopes.preview.useMutation();
+  const rerouteMutation = trpc.scopes.reroute.useMutation({
+    onSuccess: () => utils.scopes.list.invalidate(),
+  });
 
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
@@ -28,6 +31,24 @@ export default function ScopesPage(): React.JSX.Element {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editBrief, setEditBrief] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [menuOpen]);
 
   function handleCreate() {
     if (!name.trim() || !brief.trim()) return;
@@ -55,8 +76,8 @@ export default function ScopesPage(): React.JSX.Element {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div className="min-w-0 flex-1">
           <h1
             className="text-lg font-semibold"
             style={{ color: "var(--color-text-primary)" }}
@@ -70,15 +91,80 @@ export default function ScopesPage(): React.JSX.Element {
             Group evidence by domain. Evidence is routed to scopes by
             similarity to the scope brief.
           </p>
+          {rerouteMutation.data && !rerouteMutation.isPending && (
+            <p
+              className="text-xs mt-2"
+              style={{ color: "var(--color-success)" }}
+            >
+              Re-routed: {rerouteMutation.data.routed} attached,{" "}
+              {rerouteMutation.data.unscoped} unscoped of{" "}
+              {rerouteMutation.data.total} total.
+            </p>
+          )}
         </div>
         {!showCreate && (
-          <button
-            onClick={() => setShowCreate(true)}
-            className="rounded px-3 py-1.5 text-sm font-medium text-white"
-            style={{ background: "var(--color-brand-accent)" }}
-          >
-            New scope
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowCreate(true)}
+              className="whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium text-white"
+              style={{ background: "var(--color-brand-accent)" }}
+            >
+              New scope
+            </button>
+            {scopes && scopes.length > 0 && (
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen((v) => !v)}
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className="flex h-8 w-8 items-center justify-center rounded border"
+                  style={{
+                    borderColor: "var(--color-border-subtle)",
+                    color: "var(--color-text-secondary)",
+                  }}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="8" cy="3" r="1.4" />
+                    <circle cx="8" cy="8" r="1.4" />
+                    <circle cx="8" cy="13" r="1.4" />
+                  </svg>
+                </button>
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 mt-1 w-48 rounded border py-1 text-sm shadow-lg z-10"
+                    style={{
+                      background: "var(--color-surface-raised)",
+                      borderColor: "var(--color-border-default)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        rerouteMutation.mutate();
+                      }}
+                      disabled={rerouteMutation.isPending}
+                      className="block w-full px-3 py-1.5 text-left disabled:opacity-50 hover:bg-[var(--color-surface-sunken)]"
+                    >
+                      {rerouteMutation.isPending
+                        ? "Re-routing…"
+                        : "Re-route all evidence"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -284,6 +370,14 @@ export default function ScopesPage(): React.JSX.Element {
                   >
                     {scope.evidenceCount} evidence
                   </span>
+                  {scope.evidenceCount === 0 && (
+                    <p
+                      className="text-[13px] mt-2 max-w-md leading-snug"
+                      style={{ color: "var(--color-text-tertiary)" }}
+                    >
+                      No matches yet — try widening the brief.
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button

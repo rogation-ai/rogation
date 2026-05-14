@@ -41,7 +41,7 @@ describe("scope CRUD", () => {
 
   it("SCOPE_THRESHOLD and MULTI_SCOPE_MARGIN are exported", async () => {
     const mod = await import("@/lib/evidence/scope-routing");
-    expect(mod.SCOPE_THRESHOLD).toBe(0.7);
+    expect(mod.SCOPE_THRESHOLD).toBe(0.55);
     expect(mod.MULTI_SCOPE_MARGIN).toBe(0.05);
   });
 });

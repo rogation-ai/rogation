@@ -8,6 +8,8 @@ import {
   scopeCount,
   updateScope,
 } from "@/lib/evidence/scopes";
+import { routeAllEvidence } from "@/lib/evidence/scope-routing";
+import { checkLimit } from "@/lib/rate-limit";
 import { authedProcedure, router } from "@/server/trpc";
 
 export const scopesRouter = router({
@@ -93,4 +95,34 @@ export const scopesRouter = router({
         input.brief,
       );
     }),
+
+  // Manual re-route: useful when the user adds new evidence after
+  // creating a scope, or after lowering the routing threshold. The
+  // automatic routes happen on createScope / updateScope (when the
+  // brief changes); this is the "do it now" escape hatch.
+  // Rate-limited: routeAllEvidence is O(rows × scopes) and runs
+  // inside the resolver's transaction; mash-clicking across tabs
+  // would hold long txs and contend with concurrent ingest writes.
+  reroute: authedProcedure.mutation(async ({ ctx }) => {
+    const limit = await checkLimit("scope-reroute", ctx.accountId);
+    if (!limit.success) {
+      throw new TRPCError({
+        code: "TOO_MANY_REQUESTS",
+        message: "Re-route is rate-limited. Try again in a few minutes.",
+        cause: {
+          type: "rate_limited",
+          limit: limit.limit,
+          resetAt: limit.reset,
+        },
+      });
+    }
+    try {
+      return await routeAllEvidence(ctx.db, ctx.accountId);
+    } catch (err) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: err instanceof Error ? err.message : "Failed to re-route evidence",
+      });
+    }
+  }),
 });
