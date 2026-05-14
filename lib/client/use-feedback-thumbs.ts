@@ -46,7 +46,10 @@ export function useFeedbackThumbs(
   const votes = useMemo<Record<string, ThumbsRating>>(() => {
     const lookup: Record<string, ThumbsRating> = {};
     for (const v of mine.data ?? []) {
-      lookup[v.entityId] = v.rating;
+      // ThumbsRating only handles "up" | "down" | null — dismiss
+      // ratings are a separate feedback surface, not shown in thumbs.
+      lookup[v.entityId] =
+        v.rating === "up" || v.rating === "down" ? v.rating : null;
     }
     return lookup;
   }, [mine.data]);

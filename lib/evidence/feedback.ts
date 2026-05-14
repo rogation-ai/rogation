@@ -33,7 +33,7 @@ import type { Tx } from "@/db/scoped";
 */
 
 export type FeedbackEntityType = "insight_cluster" | "opportunity" | "spec";
-export type FeedbackRating = "up" | "down";
+export type FeedbackRating = "up" | "down" | "dismiss";
 
 export interface FeedbackCtx {
   db: Tx;

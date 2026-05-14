@@ -111,6 +111,16 @@ export const RATE_LIMIT_PRESETS = {
     window: "1 h",
   },
   /**
+   * Cluster dismiss. By accountId. Each dismiss tombstones a cluster,
+   * flags evidence, and creates an exclusion row. 20/hour is generous
+   * for a PM cleaning up insights after a re-cluster but stops a
+   * script from wiping the entire corpus.
+   */
+  "cluster-dismiss": {
+    requests: 20,
+    window: "1 h",
+  },
+  /**
    * Nango webhook ingestion. By accountId. Each event triggers an
    * ingestEvidence call + embed. 100/hour is generous for a single
    * Slack channel (~4 msg/hour avg) but caps a runaway backfill or

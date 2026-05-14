@@ -10,6 +10,7 @@ import {
   normalizeEvidenceText,
 } from "@/lib/evidence/hash";
 import { inngest, EVENT_EMBED_REQUESTED } from "@/lib/inngest/client";
+import { matchExclusionCentroid } from "@/lib/evidence/exclusions";
 
 /*
   Shared ingestion pipeline. Paste (tRPC) and file upload (Route
@@ -155,6 +156,23 @@ export async function ingestEvidence(
       name: EVENT_EMBED_REQUESTED,
       data: { accountId: ctx.accountId, evidenceId: row.id },
     });
+  }
+
+  if (embedMode === "sync") {
+    const match = await matchExclusionCentroid(
+      ctx.db,
+      ctx.accountId,
+      row.id,
+    );
+    if (match) {
+      await ctx.db
+        .update(evidence)
+        .set({
+          exclusionPending: true,
+          flaggedByExclusionId: match.exclusionId,
+        })
+        .where(eq(evidence.id, row.id));
+    }
   }
 
   return { id: row.id, deduped: false };

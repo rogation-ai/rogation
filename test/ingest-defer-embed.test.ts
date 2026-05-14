@@ -45,6 +45,9 @@ vi.mock("@/lib/inngest/client", async () => {
     inngest: { send: vi.fn(async () => ({ ids: ["evt-1"] })) },
   };
 });
+vi.mock("@/lib/evidence/exclusions", () => ({
+  matchExclusionCentroid: vi.fn(async () => null),
+}));
 
 import { embed } from "@/lib/llm/router";
 import { inngest } from "@/lib/inngest/client";

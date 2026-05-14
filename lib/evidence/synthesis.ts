@@ -78,7 +78,14 @@ export async function runFullClustering(
       evidenceEmbeddings,
       eq(evidenceEmbeddings.evidenceId, evidence.id),
     )
-    .where(and(eq(evidence.accountId, ctx.accountId), scopeWhere))
+    .where(
+      and(
+        eq(evidence.accountId, ctx.accountId),
+        eq(evidence.excluded, false),
+        eq(evidence.exclusionPending, false),
+        scopeWhere,
+      ),
+    )
     .orderBy(desc(evidence.createdAt));
 
   if (rows.length === 0) {

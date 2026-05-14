@@ -77,7 +77,7 @@ export const readinessGrade = pgEnum("readiness_grade", ["A", "B", "C", "D"]);
 
 export const refinementRole = pgEnum("refinement_role", ["user", "assistant"]);
 
-export const feedbackRating = pgEnum("feedback_rating", ["up", "down"]);
+export const feedbackRating = pgEnum("feedback_rating", ["up", "down", "dismiss"]);
 export const feedbackEntityType = pgEnum("feedback_entity_type", [
   "insight_cluster",
   "opportunity",
@@ -100,6 +100,8 @@ export const integrationStatusEnum = pgEnum("integration_status", [
   "rate_limited",
   "disabled",
 ]);
+
+export const tombstoneReason = pgEnum("tombstone_reason", ["merge", "dismiss"]);
 
 export const metricSource = pgEnum("metric_source", ["manual", "posthog"]);
 
@@ -233,6 +235,9 @@ export const evidence = pgTable(
     scopeId: uuid("scope_id").references(() => pmScopes.id, {
       onDelete: "set null",
     }),
+    excluded: boolean("excluded").notNull().default(false),
+    exclusionPending: boolean("exclusion_pending").notNull().default(false),
+    flaggedByExclusionId: uuid("flagged_by_exclusion_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -303,6 +308,7 @@ export const insightClusters = pgTable(
     // depend on this row staying resolvable.
     tombstonedInto: uuid("tombstoned_into"),
     contextUsed: boolean("context_used"),
+    tombstoneReason: tombstoneReason("tombstone_reason"),
     scopeId: uuid("scope_id").references(() => pmScopes.id, {
       onDelete: "set null",
     }),
@@ -323,6 +329,48 @@ export const insightClusters = pgTable(
       t.scopeId,
       t.updatedAt.desc(),
     ),
+  ],
+);
+
+export const clusterExclusions = pgTable(
+  "cluster_exclusion",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    scopeId: uuid("scope_id").references(() => pmScopes.id, {
+      onDelete: "set null",
+    }),
+    sourceClusterId: uuid("source_cluster_id").references(
+      () => insightClusters.id,
+      { onDelete: "set null" },
+    ),
+    centroid: vector("centroid", { dimensions: 1536 }),
+    label: text("label").notNull(),
+    reason: text("reason"),
+    strength: real("strength").notNull().default(1.0),
+    isActive: boolean("is_active").notNull().default(true),
+    dismissedBy: uuid("dismissed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("exclusion_account_active_idx")
+      .on(t.accountId)
+      .where(sql`${t.isActive} = true`),
+    index("exclusion_scope_idx")
+      .on(t.accountId, t.scopeId)
+      .where(sql`${t.isActive} = true`),
   ],
 );
 
@@ -783,3 +831,5 @@ export type LlmUsage = typeof llmUsage.$inferSelect;
 export type NewLlmUsage = typeof llmUsage.$inferInsert;
 export type PmScope = typeof pmScopes.$inferSelect;
 export type NewPmScope = typeof pmScopes.$inferInsert;
+export type ClusterExclusion = typeof clusterExclusions.$inferSelect;
+export type NewClusterExclusion = typeof clusterExclusions.$inferInsert;

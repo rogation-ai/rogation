@@ -3,6 +3,7 @@ import { billingRouter } from "@/server/routers/billing";
 import { evidenceRouter } from "@/server/routers/evidence";
 import { feedbackRouter } from "@/server/routers/feedback";
 import { insightsRouter } from "@/server/routers/insights";
+import { learningRouter } from "@/server/routers/learning";
 import { integrationsRouter } from "@/server/routers/integrations";
 import { opportunitiesRouter } from "@/server/routers/opportunities";
 import { outcomesRouter } from "@/server/routers/outcomes";
@@ -20,6 +21,7 @@ export const appRouter = router({
   feedback: feedbackRouter,
   insights: insightsRouter,
   integrations: integrationsRouter,
+  learning: learningRouter,
   opportunities: opportunitiesRouter,
   outcomes: outcomesRouter,
   scopes: scopesRouter,

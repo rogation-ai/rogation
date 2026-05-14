@@ -139,7 +139,14 @@ export async function runIncrementalClustering(
       evidenceEmbeddings,
       eq(evidenceEmbeddings.evidenceId, evidence.id),
     )
-    .where(and(eq(evidence.accountId, ctx.accountId), scopeEvidenceWhere));
+    .where(
+      and(
+        eq(evidence.accountId, ctx.accountId),
+        eq(evidence.excluded, false),
+        eq(evidence.exclusionPending, false),
+        scopeEvidenceWhere,
+      ),
+    );
 
   // Validate each row's embedding shape before narrowing. A blanket
   // `as` cast would silently pass non-array values from a driver
