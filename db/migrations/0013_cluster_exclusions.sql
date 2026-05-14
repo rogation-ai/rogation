@@ -12,7 +12,7 @@ ALTER TABLE evidence ADD COLUMN IF NOT EXISTS exclusion_pending boolean NOT NULL
 -- Step 3: Create cluster_exclusion table first (evidence FK references it)
 CREATE TABLE IF NOT EXISTS cluster_exclusion (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES account(id) ON DELETE CASCADE,
   scope_id uuid REFERENCES pm_scope(id) ON DELETE SET NULL,
   source_cluster_id uuid REFERENCES insight_cluster(id) ON DELETE SET NULL,
   centroid vector(1536),
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS cluster_exclusion (
   reason text,
   strength real NOT NULL DEFAULT 1.0,
   is_active boolean NOT NULL DEFAULT true,
-  dismissed_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  dismissed_by uuid REFERENCES "user"(id) ON DELETE SET NULL,
   dismissed_at timestamptz NOT NULL DEFAULT now(),
   last_used_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
